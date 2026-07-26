@@ -1,0 +1,51 @@
+{
+  "name": "gelectron",
+  "version": "0.1.0",
+  "description": "Firefox-engine alternative to Electron, powered by Servo",
+  "main": "src/electron/index.js",
+  "bin": {
+    "gelectron": "./cli/gelectron.js"
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "artifacts": "napi artifacts",
+    "prepublishOnly": "napi prepublish -t npm",
+    "universal": "napi universal"
+  },
+  "napi": {
+    "name": "gelectron_core",
+    "triples": {
+      "defaults": true,
+      "additional": [
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu"
+      ]
+    }
+  },
+  "files": [
+    "cli/",
+    "src/",
+    "crates/gelectron-core/*.node"
+  ],
+  "keywords": [
+    "electron",
+    "servo",
+    "gecko",
+    "browser",
+    "desktop",
+    "webview"
+  ],
+  "author": "mileswa1q22",
+  "license": "MIT",
+  "devDependencies": {
+    "@napi-rs/cli": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
