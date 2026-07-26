@@ -10,7 +10,7 @@
     "build": "napi build --platform --release --package gelectron-core",
     "build:debug": "napi build --platform --package gelectron-core",
     "artifacts": "napi artifacts",
-    "prepublishOnly": "napi prepublish -t npm --package gelectron-core",
+    "prepublishOnly": "napi prepublish -t npm",
     "universal": "napi universal"
   },
   "napi": {
