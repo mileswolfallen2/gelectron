@@ -17,6 +17,57 @@ const nativeImage = require('./native-image');
 const safeStorage = require('./safe-storage');
 const contextBridge = require('./context-bridge');
 const webContents = require('./web-contents');
+const { autoUpdater, AutoUpdater } = require('./auto-updater');
+
+// Session stub (electron-updater calls session.fromPartition)
+const sessionStub = {
+  defaultSession: {
+    cookies: {
+      get: async () => [],
+      set: async () => {},
+      remove: async () => {},
+      getSession: () => null,
+    },
+    protocol: {
+      registerFileProtocol: () => {},
+      registerHttpProtocol: () => {},
+      unregisterProtocol: () => {},
+      isProtocolRegistered: () => false,
+    },
+    setPermissionRequestHandler: () => {},
+    setPermissionCheckHandler: () => {},
+    webRequest: {
+      onBeforeRequest: () => {},
+      onHeadersReceived: () => {},
+    },
+    setUserAgent: () => {},
+    getUserAgent: () => '',
+  },
+  fromPartition: (partition, options) => ({
+    cookies: {
+      get: async () => [],
+      set: async () => {},
+      remove: async () => {},
+    },
+    protocol: {
+      registerFileProtocol: () => {},
+      registerHttpProtocol: () => {},
+      unregisterProtocol: () => {},
+      isProtocolRegistered: () => false,
+    },
+    webRequest: {
+      onBeforeRequest: () => {},
+      onHeadersReceived: () => {},
+      resolveProxy: async () => '',
+    },
+    setUserAgent: () => {},
+    getUserAgent: () => '',
+    clearCache: async () => {},
+    clearStorageData: async () => {},
+    setProxy: async () => {},
+    getProxy: async () => ({ mode: 'direct' }),
+  }),
+};
 
 module.exports = {
   app,
@@ -32,6 +83,9 @@ module.exports = {
   safeStorage,
   contextBridge,
   webContents,
+  autoUpdater,
+  AutoUpdater,
+  session: sessionStub,
 
   // Aliases for common imports
   clipboard: {
@@ -83,32 +137,8 @@ module.exports = {
     unregisterAll: () => {},
     isRegistered: () => false,
   },
-  session: {
-    defaultSession: {
-      cookies: {
-        get: async () => [],
-        set: async () => {},
-        remove: async () => {},
-        getSession: () => null,
-      },
-      protocol: {
-        registerFileProtocol: () => {},
-        registerHttpProtocol: () => {},
-        unregisterProtocol: () => {},
-        isProtocolRegistered: () => false,
-      },
-      setPermissionRequestHandler: () => {},
-      setPermissionCheckHandler: () => {},
-      webRequest: {
-        onBeforeRequest: () => {},
-        onHeadersReceived: () => {},
-      },
-      setUserAgent: () => {},
-      getUserAgent: () => '',
-    },
-  },
   net: {
-    fetch: globalThis.fetch || require('node-fetch'),
+    fetch: globalThis.fetch || (() => Promise.reject(new Error('fetch not available'))),
   },
 
   // Constants

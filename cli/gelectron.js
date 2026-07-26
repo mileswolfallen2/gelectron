@@ -76,11 +76,18 @@ if (!fs.existsSync(mainScript)) {
 }
 
 const nativeDir = path.join(__dirname, '..', 'crates', 'gelectron-core');
+const platformSuffix = process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux';
+const archSuffix = process.arch === 'arm64' ? 'arm64' : 'x64';
+const ext = process.platform === 'win32' ? 'dll' : process.platform === 'darwin' ? 'dylib' : 'so';
+const napiPlatform = process.platform === 'win32' ? `${platformSuffix}-${archSuffix}-msvc` : process.platform === 'darwin' ? `${platformSuffix}-${archSuffix}` : `${platformSuffix}-${archSuffix}-gnu`;
 const candidates = [
-  path.join(nativeDir, 'release', `gelectron_core.${process.platform === 'win32' ? 'dll' : process.platform === 'darwin' ? 'dylib' : 'so'}`),
-  path.join(nativeDir, 'debug', `gelectron_core.${process.platform === 'win32' ? 'dll' : process.platform === 'darwin' ? 'dylib' : 'so'}`),
-  path.join(__dirname, '..', `gelectron_core.${process.platform === 'win32' ? 'dll' : process.platform === 'darwin' ? 'dylib' : 'so'}`),
-  path.join(__dirname, '..', 'napi-dist', process.platform, process.arch, `gelectron_core.${process.platform === 'win32' ? 'dll' : process.platform === 'darwin' ? 'dylib' : 'so'}`),
+  path.join(nativeDir, `gelectron_core.${napiPlatform}.node`),
+  path.join(__dirname, '..', `gelectron_core.${napiPlatform}.node`),
+  path.join(__dirname, '..', 'npm', napiPlatform, `gelectron_core.${napiPlatform}.node`),
+  path.join(nativeDir, 'release', `gelectron_core.${ext}`),
+  path.join(nativeDir, 'debug', `gelectron_core.${ext}`),
+  path.join(__dirname, '..', `gelectron_core.${ext}`),
+  path.join(__dirname, '..', 'napi-dist', process.platform, process.arch, `gelectron_core.${ext}`),
 ];
 
 let nativeAddonPath = null;

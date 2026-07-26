@@ -7,25 +7,22 @@
     "gelectron": "./cli/gelectron.js"
   },
   "scripts": {
-    "build": "napi build --platform --release",
-    "build:debug": "napi build --platform",
+    "build": "napi build --platform --release --package gelectron-core",
+    "build:debug": "napi build --platform --package gelectron-core",
     "artifacts": "napi artifacts",
-    "prepublishOnly": "napi prepublish -t npm",
+    "prepublishOnly": "napi prepublish -t npm --package gelectron-core",
     "universal": "napi universal"
   },
   "napi": {
-    "name": "gelectron_core",
-    "triples": {
-      "defaults": true,
-      "additional": [
-        "aarch64-apple-darwin",
-        "x86_64-apple-darwin",
-        "x86_64-pc-windows-msvc",
-        "aarch64-pc-windows-msvc",
-        "x86_64-unknown-linux-gnu",
-        "aarch64-unknown-linux-gnu"
-      ]
-    }
+    "binaryName": "gelectron_core",
+    "targets": [
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu"
+    ]
   },
   "files": [
     "cli/",
@@ -36,10 +33,21 @@
     "electron",
     "servo",
     "gecko",
+    "firefox",
     "browser",
     "desktop",
-    "webview"
+    "webview",
+    "chromium",
+    "alternative"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mileswolfallen2/gelectron.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mileswolfallen2/gelectron/issues"
+  },
+  "homepage": "https://github.com/mileswolfallen2/gelectron#readme",
   "author": "mileswa1q22",
   "license": "MIT",
   "devDependencies": {
@@ -47,5 +55,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "optionalDependencies": {
+    "gelectron-darwin-arm64": "0.1.0"
   }
 }

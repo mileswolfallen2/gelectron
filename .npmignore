@@ -1,0 +1,11 @@
+target/
+crates/*/src/
+crates/*/Cargo.toml
+crates/*/build.rs
+Cargo.toml
+Cargo.lock
+.git/
+.github/
+*.rs
+*.lock
+*.md

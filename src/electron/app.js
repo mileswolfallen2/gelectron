@@ -90,6 +90,14 @@ class App extends EventEmitter {
     return process.env.GELECTRON_VERSION || '0.1.0';
   }
 
+  getAppPath() {
+    return process.env.GELECTRON_APP_PATH || process.cwd();
+  }
+
+  relaunch(options = {}) {
+    process.exit(0);
+  }
+
   getPath(name) {
     return this._paths[name] || this._paths.userData;
   }
