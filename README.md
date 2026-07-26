@@ -1,10 +1,8 @@
-<p align="center">
-  <img src="logo.png" alt="Gelectron" width="200">
-</p>
-
-# Gelectron
-
-A drop-in replacement for Electron that swaps Chromium's rendering engine with Mozilla's Servo (Gecko CSS + WebRender GPU compositor). Run `gelectron .` instead of `electron .`.
+<div align="center">
+  <img src="logo.png" alt="Gelectron" width="180">
+  <h1>Gelectron</h1>
+  <p>A drop-in replacement for Electron powered by Mozilla's Servo engine</p>
+</div>
 
 ## Why Gelectron?
 
