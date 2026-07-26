@@ -6,6 +6,7 @@
 
 const { EventEmitter } = require('events');
 const path = require('path');
+const { bridge, isNative } = require('./native-bridge');
 
 class WebContents extends EventEmitter {
   constructor(id) {
@@ -52,22 +53,41 @@ class WebContents extends EventEmitter {
     this._url = targetUrl;
     this._isLoading = true;
     this.emit('did-start-loading');
+    if (isNative) {
+      bridge.loadUrl(this.id, targetUrl);
+    }
     setTimeout(() => {
       this._isLoading = false;
       this.emit('did-stop-loading');
       this.emit('did-finish-load');
       this.emit('dom-ready');
-    }, 100);
+    }, isNative ? 500 : 100);
     return Promise.resolve();
   }
 
   loadFile(filePath) {
-    return this.loadURL(`file://${path.resolve(filePath)}`);
+    const url = `file://${path.resolve(filePath)}`;
+    this._url = url;
+    this._isLoading = true;
+    this.emit('did-start-loading');
+    if (isNative) {
+      bridge.loadFile(this.id, filePath);
+    }
+    setTimeout(() => {
+      this._isLoading = false;
+      this.emit('did-stop-loading');
+      this.emit('did-finish-load');
+      this.emit('dom-ready');
+    }, isNative ? 500 : 100);
+    return Promise.resolve();
   }
 
   reload() {
     this._isLoading = true;
     this.emit('did-start-loading');
+    if (isNative && this._url) {
+      bridge.loadUrl(this.id, this._url);
+    }
     setTimeout(() => {
       this._isLoading = false;
       this.emit('did-stop-loading');
@@ -82,6 +102,9 @@ class WebContents extends EventEmitter {
   goForward() {}
 
   executeJavaScript(code, userGesture = true) {
+    if (isNative) {
+      bridge.evalJs(this.id, code);
+    }
     return Promise.resolve(null);
   }
 
@@ -89,7 +112,11 @@ class WebContents extends EventEmitter {
   insertJS(code, hasUserGesture = true) { return this.executeJavaScript(code, hasUserGesture); }
 
   send(channel, ...args) {
-    console.log(`[gelectron] webContents.send('${channel}')`);
+    if (isNative) {
+      bridge.sendToRenderer(this.id, channel, ...args);
+    } else {
+      console.log(`[gelectron] webContents.send('${channel}')`);
+    }
   }
 
   sendInputEvent() {}
@@ -178,6 +205,18 @@ class BrowserWindow extends EventEmitter {
 
     BrowserWindow._windows.set(this.id, this);
 
+    if (isNative) {
+      bridge.createWindow(this.id, {
+        width: this._options.width,
+        height: this._options.height,
+        title: this._options.title,
+        show: this._options.show,
+        resizable: this._options.resizable,
+        alwaysOnTop: this._options.alwaysOnTop,
+        fullscreen: this._options.fullscreen,
+      });
+    }
+
     if (this._options.show) {
       process.nextTick(() => {
         if (!this._isDestroyed) {
@@ -209,23 +248,28 @@ class BrowserWindow extends EventEmitter {
 
   loadURL(targetUrl) {
     this._url = targetUrl;
+    if (isNative) {
+      bridge.loadUrl(this.id, targetUrl);
+    }
     return this.webContents.loadURL(targetUrl);
   }
 
   loadFile(filePath) {
-    return this.loadURL(`file://${path.resolve(filePath)}`);
+    return this.webContents.loadFile(filePath);
   }
 
   show() {
     if (this._isDestroyed) return;
     this._isVisible = true;
     this._isMinimized = false;
+    if (isNative) bridge.showWindow(this.id);
     this.emit('show');
   }
 
   hide() {
     if (this._isDestroyed) return;
     this._isVisible = false;
+    if (isNative) bridge.hideWindow(this.id);
     this.emit('hide');
   }
 
@@ -238,15 +282,16 @@ class BrowserWindow extends EventEmitter {
   destroy() {
     if (this._isDestroyed) return;
     this._isDestroyed = true;
+    if (isNative) bridge.destroyWindow(this.id);
     BrowserWindow._windows.delete(this.id);
     this.emit('closed');
   }
 
-  focus() { if (!this._isDestroyed) this.emit('focus'); }
+  focus() { if (!this._isDestroyed) { if (isNative) bridge.focusWindow(this.id); this.emit('focus'); } }
   blur() {}
 
-  minimize() { if (!this._isDestroyed) { this._isMinimized = true; this.emit('minimize'); } }
-  maximize() { if (!this._isDestroyed) { this._isMaximized = true; this.emit('maximize'); } }
+  minimize() { if (!this._isDestroyed) { this._isMinimized = true; if (isNative) bridge.minimizeWindow(this.id); this.emit('minimize'); } }
+  maximize() { if (!this._isDestroyed) { this._isMaximized = true; if (isNative) bridge.maximizeWindow(this.id); this.emit('maximize'); } }
   unmaximize() { if (!this._isDestroyed) { this._isMaximized = false; this.emit('unmaximize'); } }
   restore() { if (!this._isDestroyed) { this._isMinimized = false; this._isMaximized = false; this.emit('restore'); } }
 
@@ -282,7 +327,7 @@ class BrowserWindow extends EventEmitter {
   setClosable(v) { this._options.closable = v; }
   isClosable() { return this._options.closable; }
 
-  setTitle(title) { this._options.title = title; this.webContents._title = title; }
+  setTitle(title) { this._options.title = title; this.webContents._title = title; if (isNative) bridge.setTitle(this.id, title); }
   getTitle() { return this._options.title; }
 
   setSkipTaskbar() {}

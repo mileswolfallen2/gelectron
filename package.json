@@ -57,6 +57,11 @@
     "node": ">=18.0.0"
   },
   "optionalDependencies": {
-    "gelectron-darwin-arm64": "0.1.0"
+    "gelectron-darwin-arm64": "0.1.0",
+    "gelectron-darwin-x64": "0.1.0",
+    "gelectron-win32-x64-msvc": "0.1.0",
+    "gelectron-win32-arm64-msvc": "0.1.0",
+    "gelectron-linux-x64-gnu": "0.1.0",
+    "gelectron-linux-arm64-gnu": "0.1.0"
   }
 }

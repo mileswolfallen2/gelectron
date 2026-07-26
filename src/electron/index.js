@@ -18,6 +18,14 @@ const safeStorage = require('./safe-storage');
 const contextBridge = require('./context-bridge');
 const webContents = require('./web-contents');
 const { autoUpdater, AutoUpdater } = require('./auto-updater');
+const { bridge, isNative } = require('./native-bridge');
+
+if (isNative) {
+  bridge.on('ipc-message', (windowId, channel, data) => {
+    const event = { sender: { id: windowId }, channel };
+    ipcMain._emit(channel, event, data);
+  });
+}
 
 // Session stub (electron-updater calls session.fromPartition)
 const sessionStub = {

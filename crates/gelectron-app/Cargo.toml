@@ -1,0 +1,19 @@
+[package]
+name = "gelectron"
+version = "0.1.0"
+edition = "2021"
+description = "Gelectron - Firefox-engine alternative to Electron"
+license = "MIT"
+authors = ["mileswa1q22"]
+
+[[bin]]
+name = "gelectron"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+wry = "0.47"
+tao = "0.30"

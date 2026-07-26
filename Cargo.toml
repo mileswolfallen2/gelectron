@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/gelectron-core"]
+members = ["crates/gelectron-core", "crates/gelectron-app"]
 resolver = "2"
 
 [workspace.dependencies]

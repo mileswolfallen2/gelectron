@@ -3,7 +3,15 @@
 /**
  * Gelectron - autoUpdater module (Electron compatible)
  * Stub implementation for electron-updater compatibility.
- * electron-updater uses require("electron").autoUpdater as its native backend.
+ *
+ * electron-updater's MacUpdater / NsisUpdater / AppImageUpdater all
+ * access `require("electron").autoUpdater` and expect it to be an
+ * EventEmitter with the native Electron autoUpdater API surface:
+ *   .on("error", …), .on("update-downloaded", …)
+ *   .setFeedURL(), .getFeedURL()
+ *   .checkForUpdates()
+ *   .quitAndInstall()
+ *   .removeListener()
  */
 
 const { EventEmitter } = require('events');
@@ -13,6 +21,7 @@ class AutoUpdater extends EventEmitter {
     super();
     this._isUpdateAvailable = false;
     this._updateInfo = null;
+    this._feedURL = null;
     this.autoDownload = true;
     this.autoInstallOnAppQuit = false;
     this.autoRunAppAfterInstall = true;
@@ -20,10 +29,12 @@ class AutoUpdater extends EventEmitter {
   }
 
   getFeedURL() {
-    return null;
+    return this._feedURL;
   }
 
-  setFeedURL() {}
+  setFeedURL(options) {
+    this._feedURL = options;
+  }
 
   async checkForUpdates() {
     return {

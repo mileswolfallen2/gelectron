@@ -113,8 +113,8 @@ if (process.env.GELECTRON_LOG) {
   console.log(`[gelectron] native addon: ${nativeAddonPath || 'not found (using build target)'}`);
 }
 
-const rustBin = path.join(nativeDir, 'target', 'release', 'gelectron');
-const rustBinDebug = path.join(nativeDir, 'target', 'debug', 'gelectron');
+const rustBin = path.join(__dirname, '..', 'target', 'release', 'gelectron');
+const rustBinDebug = path.join(__dirname, '..', 'target', 'debug', 'gelectron');
 
 let executable;
 if (fs.existsSync(rustBin)) {
@@ -124,15 +124,15 @@ if (fs.existsSync(rustBin)) {
 }
 
 if (executable) {
-  const child = spawn(executable, args.slice(1), {
+  console.log(`[gelectron] Using native binary: ${executable}`);
+  const child = spawn(executable, args, {
     env,
     stdio: 'inherit',
     cwd: process.cwd(),
   });
   child.on('exit', (code) => process.exit(code || 0));
 } else {
-  console.log(`[gelectron] Native binary not found. Running main script directly via Node.js.`);
-  console.log(`[gelectron] Build with: cargo build --release -p gelectron-core`);
+  console.log(`[gelectron] Native binary not found. Run: cargo build --release -p gelectron`);
   console.log(`[gelectron] Falling back to Node.js runtime...\n`);
 
   require('../src/electron/runtime.js').run(mainScript, env);

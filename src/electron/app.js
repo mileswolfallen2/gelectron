@@ -47,6 +47,15 @@ class App extends EventEmitter {
     } : null;
 
     this._argv = process.argv.slice();
+
+    // Emit 'ready' automatically on the next tick, matching real Electron
+    // where the app becomes ready once the process has initialised.
+    process.nextTick(() => {
+      if (!this._ready) {
+        this._ready = true;
+        this.emit('ready');
+      }
+    });
   }
 
   get commandLine() {

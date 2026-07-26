@@ -6,7 +6,11 @@
   "files": [
     "gelectron_core.darwin-arm64.node"
   ],
-  "os": ["darwin"],
-  "cpu": ["arm64"],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
   "license": "MIT"
 }
