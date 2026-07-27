@@ -210,7 +210,13 @@ async function packageApp(opts) {
 
   // 1. Find gelectron binary
   log('  Locating gelectron binary...');
-  let gelectronBin = findGelectronFromAncestors(appDir);
+  let gelectronBin;
+  if (opts.binary) {
+    gelectronBin = path.resolve(opts.binary);
+    if (!fs.existsSync(gelectronBin)) die(`Binary not found: ${gelectronBin}`);
+  } else {
+    gelectronBin = findGelectronFromAncestors(appDir);
+  }
 
   if (!gelectronBin) die('gelectron binary not found. Run: cargo build --release');
   log(`  Found: ${path.basename(gelectronBin)}`);
@@ -292,6 +298,15 @@ exec "$DIR/gelectron-bin" "$@"
   // Generate Info.plist
   fs.writeFileSync(path.join(contentsDir, 'Info.plist'), generateInfoPlist(name, version, exeName));
 
+  // Ad-hoc sign so the app runs on other Macs
+  log('  Signing app...');
+  try {
+    execSync(`codesign --force --deep --sign - "${appBundle}"`, { stdio: 'pipe' });
+    log('  Signed (ad-hoc)');
+  } catch (e) {
+    log('  Warning: codesign failed (app may be blocked on other Macs)');
+  }
+
   log(`  Created: ${appBundle}`);
 }
 
@@ -321,7 +336,15 @@ async function packageWindows(appDir, outDir, name, version, gelectronBin, nodeD
   log('  Copying app source...');
   copyDirSync(appDir, path.join(outDir, 'app'), ['node_modules', '.gelectron-cache', '.git', 'target']);
 
-  // Generate launcher batch
+  // Generate VBScript launcher (no terminal window)
+  const vbs = `Set WshShell = CreateObject("WScript.Shell")
+WshShell.CurrentDirectory = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
+WshShell.Environment("Process")("PATH") = WshShell.CurrentDirectory & ";" & WshShell.Environment("Process")("PATH")
+WshShell.Run """" & WshShell.CurrentDirectory & "\\${exeName}.exe""", 1, False
+`;
+  fs.writeFileSync(path.join(outDir, `${exeName}.vbs`), vbs);
+
+  // Also keep a .bat for convenience
   const bat = `@echo off
 set DIR=%~dp0
 set PATH=%DIR%;%PATH%
@@ -388,6 +411,7 @@ for (let i = 0; i < args.length; i++) {
     case '--out': case '-o': opts.out = args[++i]; break;
     case '--platform': case '-p': opts.platform = args[++i]; break;
     case '--arch': case '-a': opts.arch = args[++i]; break;
+    case '--binary': case '-b': opts.binary = args[++i]; break;
     case '--help': case '-h':
       console.log(`
   gelectron-packager — Package Gelectron apps for distribution
@@ -401,6 +425,7 @@ for (let i = 0; i < args.length; i++) {
     --out, -o        Output directory (default: <name>-<platform>-<arch>)
     --platform, -p   Target platform: darwin, win32, linux (default: current)
     --arch, -a       Target arch: x64, arm64 (default: current)
+    --binary, -b     Path to gelectron binary (for cross-compiled builds)
     --help, -h       Show this help
 `);
       process.exit(0);

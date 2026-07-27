@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
