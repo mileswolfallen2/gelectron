@@ -159,13 +159,32 @@ fn preload_script() -> String {
 fn main() {
     env_logger::init();
 
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: gelectron <path-to-app>");
-        std::process::exit(1);
-    }
+    let gelectron_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| std::fs::canonicalize(p).ok())
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_default();
 
-    let app_path = std::path::PathBuf::from(&args[1]);
+    let args: Vec<String> = std::env::args().collect();
+
+    // If no args, try to auto-detect app path for packaged apps
+    let raw_app_path = if args.len() >= 2 {
+        args[1].clone()
+    } else {
+        // Packaged macOS .app bundle: app is at ../Resources/app relative to binary
+        let resources_app = gelectron_dir.join("../Resources/app");
+        let sibling_app = gelectron_dir.join("app");
+        if resources_app.exists() {
+            resources_app.display().to_string()
+        } else if sibling_app.exists() {
+            sibling_app.display().to_string()
+        } else {
+            eprintln!("Usage: gelectron <path-to-app>");
+            std::process::exit(1);
+        }
+    };
+
+    let app_path = std::path::PathBuf::from(&raw_app_path);
     if !app_path.exists() {
         eprintln!("Error: path not found: {}", app_path.display());
         std::process::exit(1);
@@ -198,12 +217,6 @@ fn main() {
         std::process::exit(1);
     }
 
-    let gelectron_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| std::fs::canonicalize(p).ok())
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_default();
-
     // From target/release/ or target/debug/, go up to project root
     let project_root = if gelectron_dir.ends_with("release") || gelectron_dir.ends_with("debug") {
         gelectron_dir.parent()
@@ -218,6 +231,9 @@ fn main() {
         project_root.join("src/electron")
     } else if project_root.join("crates/gelectron-app/src/main.rs").exists() {
         project_root.join("src/electron")
+    } else if gelectron_dir.join("compat/index.js").exists() {
+        // Packaged app: compat layer is alongside the binary
+        gelectron_dir.join("compat")
     } else {
         // npm installed: try to find in node_modules
         project_root.join("node_modules/gelectron/src/electron")

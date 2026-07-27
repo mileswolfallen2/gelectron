@@ -1,0 +1,11 @@
+{
+  "name": "gelectron-packager",
+  "version": "1.0.0",
+  "description": "Package Gelectron apps for distribution",
+  "main": "bin/gelectron-packager.js",
+  "bin": {
+    "gelectron-packager": "bin/gelectron-packager.js"
+  },
+  "keywords": ["gelectron", "electron", "packager", "build"],
+  "license": "MIT"
+}

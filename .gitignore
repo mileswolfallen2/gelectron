@@ -18,6 +18,12 @@ package-lock.json
 # Benchmark results
 benchmark/result-*.json
 
+# Packaged output
+dist/
+
+# Packager cache
+.gelectron-cache/
+
 # Electron
 electron/
 

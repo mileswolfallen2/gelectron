@@ -236,8 +236,58 @@ gelectron/
 │   ├── package.json
 │   ├── main.js
 │   └── index.html
+├── packager/                        # gelectron-packager CLI
+│   ├── package.json
+│   └── bin/
+│       └── gelectron-packager.js    # Packaging tool
 └── npm/
     └── darwin-arm64/                # Platform-specific npm packages
+```
+
+## Packaging for Distribution
+
+Use `gelectron-packager` to build standalone executables for Mac, Windows, and Linux:
+
+```bash
+# Install the packager
+cd packager && npm link && cd ..
+
+# Package for current platform
+gelectron-packager --dir ./demo --name MyApp
+
+# Package for a specific platform
+gelectron-packager --dir ./my-app --name MyApp --platform darwin --arch arm64
+gelectron-packager --dir ./my-app --name MyApp --platform win32 --arch x64
+gelectron-packager --dir ./my-app --name MyApp --platform linux --arch x64
+```
+
+### What the packager does
+
+1. Finds your built gelectron binary (`target/release/gelectron`)
+2. Downloads a bundled Node.js runtime (~20 MB) for the target platform
+3. Copies your app source and `node_modules`
+4. Includes the Electron compatibility layer (`src/electron/`)
+5. Creates a self-contained, standalone distributable — no additional files needed at runtime:
+   - **macOS**: `.app` bundle (double-click to run, can be moved anywhere)
+   - **Windows**: Directory with `.exe` + `.bat` launcher
+   - **Linux**: Directory with launcher script + `.desktop` file
+
+> The packaged app bundles the Rust binary, Node.js runtime, your source code, `node_modules`, and the Electron compat layer. You can delete the original project files and the packaged app will still run.
+
+### macOS .app bundle structure
+
+```
+MyApp.app/
+  Contents/
+    MacOS/
+      MyApp              # Bash launcher (sets PATH, calls gelectron-bin)
+      gelectron-bin      # Rust binary (tao + wry)
+      node               # Bundled Node.js
+      compat/            # Electron compatibility layer
+      node_modules/      # Production dependencies
+    Resources/
+      app/               # Your app source
+    Info.plist
 ```
 
 ## Building for Production
@@ -309,7 +359,7 @@ gelectron --help              # Show help
 - [ ] Custom protocol handlers (`gelectron://`)
 - [ ] DevTools integration
 - [ ] App sandboxing
-- [ ] Package/distribution tooling
+- [x] Package/distribution tooling
 - [ ] Performance benchmarks vs Electron
 
 ## Contributing
