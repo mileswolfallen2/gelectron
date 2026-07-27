@@ -213,6 +213,28 @@
       mc.innerHTML = h;
 
       document.getElementById('results').style.display = 'block';
+
+      // Main process will inject memory via executeJavaScript every 2s
+      window.__updateMem = function() {
+        var m = window.__mainMem;
+        if (!m) return;
+        var mc = document.getElementById('mem-card');
+        mc.innerHTML = '';
+        var entries = [
+          ['Engine', m.engine],
+          ['Platform', m.platform + ' ' + m.arch],
+          ['Node.js', m.node],
+          ['RSS', m.rss + ' MB'],
+          ['Heap used', m.heapUsed + ' MB'],
+          ['Heap total', m.heapTotal + ' MB'],
+          ['External', m.external + ' MB'],
+          ['System RAM', m.totalMem + ' MB'],
+        ];
+        for (var i = 0; i < entries.length; i++) {
+          mc.innerHTML += row(entries[i][0], entries[i][1]);
+        }
+      };
+      window.__updateMem();
     })();
   </script>
 </body>
