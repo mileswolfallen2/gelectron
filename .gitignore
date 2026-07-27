@@ -5,6 +5,7 @@ crates/*/target/
 # Node.js
 node_modules/
 npm-debug.log*
+package-lock.json
 
 # Build artifacts
 *.node
@@ -13,6 +14,12 @@ npm-debug.log*
 *.dll
 *.d
 *.pdb
+
+# Benchmark results
+benchmark/result-*.json
+
+# Electron
+electron/
 
 # OS
 .DS_Store
@@ -23,9 +30,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
-
-# Cargo
-Cargo.lock
 
 # napi-rs
 napi-dist/

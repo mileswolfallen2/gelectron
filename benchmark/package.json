@@ -1,0 +1,6 @@
+{
+  "name": "gelectron-benchmark",
+  "version": "1.0.0",
+  "description": "Simple web benchmark for comparing Electron vs Gelectron",
+  "main": "main.js"
+}

@@ -129,10 +129,14 @@ fn preload_script() -> String {
 (function() {
     if (window.__gelectron_loaded) return;
     window.__gelectron_loaded = true;
-    window.__ipc_pending = [];
     window.gelectron = {
         send: function(channel, ...args) {
-            window.__ipc_pending.push(JSON.stringify({channel: channel, args: args}));
+            var payload = JSON.stringify({type:'ipc-send', channel: channel, args: args});
+            if (window.ipc && window.ipc.postMessage) {
+                window.ipc.postMessage(payload);
+            } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ipc) {
+                window.webkit.messageHandlers.ipc.postMessage(payload);
+            }
         },
         receive: function(channel, callback) {
             window.addEventListener('message', function(e) {
@@ -313,6 +317,7 @@ require('{}');
     });
 
     let event_loop = EventLoopBuilder::new().build();
+    let (ipc_tx, ipc_rx) = mpsc::channel::<ToNode>();
     let mut state = AppState::new(node_exited.clone());
     state.node_stdin = Some(child_stdin);
     let state = Rc::new(RefCell::new(state));
@@ -325,7 +330,6 @@ require('{}');
 
         // If the Node.js child process has exited, shut down
         if st.node_exited.load(Ordering::SeqCst) {
-            log::info!("Node.js process exited, shutting down");
             st.windows.clear();
             st.window_wids.clear();
             *control_flow = ControlFlow::Exit;
@@ -334,6 +338,10 @@ require('{}');
 
         match event {
             Event::NewEvents(StartCause::Poll) => {
+                // Drain IPC messages from webview → Node
+                while let Ok(msg) = ipc_rx.try_recv() {
+                    st.send_to_node(&msg);
+                }
                 while let Ok(msg) = rx.try_recv() {
                     match msg {
                         ToRust::CreateWindow { id, options } => {
@@ -354,20 +362,33 @@ require('{}');
                                 Ok(window) => {
                                     let url = options.url.unwrap_or_else(|| "about:blank".into());
                                     log::info!("Creating window {} - '{}'", id, url);
-                                    match WebViewBuilder::new()
-                                        .with_url(&url)
-                                        .with_initialization_script(&preload_script())
-                                        .with_devtools(true)
-                                        .build(&window)
-                                    {
-                                        Ok(webview) => {
-                                            let wid = window.id();
-                                            st.windows.insert(id, WindowPair { window, webview });
-                                            st.window_wids.insert(wid, id);
-                                            log::info!("Window {} ready", id);
+                                let ipc_tx_clone = ipc_tx.clone();
+                                let wid_for_ipc = id;
+                                match WebViewBuilder::new()
+                                    .with_url(&url)
+                                    .with_initialization_script(&preload_script())
+                                    .with_devtools(true)
+                                    .with_ipc_handler(move |req| {
+                                        let body = req.body().to_string();
+                                        if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&body) {
+                                            let msg_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                                            if msg_type == "ipc-send" {
+                                                let channel = msg.get("channel").and_then(|v| v.as_str()).unwrap_or("");
+                                                let args = msg.get("args").cloned().unwrap_or(serde_json::Value::Null);
+                                                let _ = ipc_tx_clone.send(ToNode::IpcMessage { id: wid_for_ipc, channel: channel.to_string(), data: args });
+                                            }
                                         }
-                                        Err(e) => log::error!("WebView error: {}", e),
+                                    })
+                                    .build(&window)
+                                {
+                                    Ok(webview) => {
+                                        let wid = window.id();
+                                        st.windows.insert(id, WindowPair { window, webview });
+                                        st.window_wids.insert(wid, id);
+                                        log::info!("Window {} ready", id);
                                     }
+                                    Err(e) => log::error!("WebView error: {}", e),
+                                }
                                 }
                                 Err(e) => log::error!("Window error: {}", e),
                             }
@@ -385,15 +406,25 @@ require('{}');
                         ToRust::LoadFile { id, path } => {
                             let url = format!("file://{}", std::fs::canonicalize(&path).unwrap_or_default().display());
                             log::info!("Loading file in window {}: {}", id, url);
-                            // Rebuild the WebView with the correct file URL.
-                            // evaluate_script navigation from about:blank to file:// is
-                            // unreliable on macOS WKWebView, so we recreate the WebView.
                             if let Some(pair) = st.windows.get_mut(&id) {
                                 let window = &pair.window;
+                                let ipc_tx_clone = ipc_tx.clone();
+                                let wid_for_ipc = id;
                                 match WebViewBuilder::new()
                                     .with_url(&url)
                                     .with_initialization_script(&preload_script())
                                     .with_devtools(true)
+                                    .with_ipc_handler(move |req| {
+                                        let body = req.body().to_string();
+                                        if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&body) {
+                                            let msg_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                                            if msg_type == "ipc-send" {
+                                                let channel = msg.get("channel").and_then(|v| v.as_str()).unwrap_or("");
+                                                let args = msg.get("args").cloned().unwrap_or(serde_json::Value::Null);
+                                                let _ = ipc_tx_clone.send(ToNode::IpcMessage { id: wid_for_ipc, channel: channel.to_string(), data: args });
+                                            }
+                                        }
+                                    })
                                     .build(window)
                                 {
                                     Ok(webview) => {

@@ -51,7 +51,8 @@
   "author": "mileswa1q22",
   "license": "MIT",
   "devDependencies": {
-    "@napi-rs/cli": "^3.0.0"
+    "@napi-rs/cli": "^3.0.0",
+    "electron": "^43.2.0"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -59,9 +60,9 @@
   "optionalDependencies": {
     "gelectron-darwin-arm64": "0.1.0",
     "gelectron-darwin-x64": "0.1.0",
-    "gelectron-win32-x64-msvc": "0.1.0",
-    "gelectron-win32-arm64-msvc": "0.1.0",
+    "gelectron-linux-arm64-gnu": "0.1.0",
     "gelectron-linux-x64-gnu": "0.1.0",
-    "gelectron-linux-arm64-gnu": "0.1.0"
+    "gelectron-win32-arm64-msvc": "0.1.0",
+    "gelectron-win32-x64-msvc": "0.1.0"
   }
 }

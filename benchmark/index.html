@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Benchmark</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, system-ui, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      padding: 32px;
+    }
+    h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+    .subtitle { color: #8b949e; font-size: 13px; margin-bottom: 28px; }
+    .section { margin-bottom: 24px; }
+    .section-title { font-size: 13px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 16px 20px;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #21262d;
+    }
+    .row:last-child { border-bottom: none; }
+    .label { font-size: 14px; color: #c9d1d9; }
+    .value { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .status { font-size: 14px; color: #8b949e; margin-bottom: 20px; }
+    .status .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    .dot.running { background: #d29922; animation: pulse 1s infinite; }
+    .dot.done { background: #3fb950; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    #results { display: none; }
+  </style>
+</head>
+<body>
+  <h1 id="title">Benchmark</h1>
+  <p class="subtitle" id="subtitle"></p>
+  <div class="status"><span class="dot running" id="dot"></span><span id="status-text">Initializing…</span></div>
+  <div id="results">
+    <div class="section">
+      <div class="section-title">Renderer Performance</div>
+      <div class="card" id="perf-card"></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Memory (Main Process)</div>
+      <div class="card" id="mem-card"></div>
+    </div>
+  </div>
+  <div id="target" style="position:absolute;left:-9999px"></div>
+  <script>
+    try {
+      var isG = !!(process.versions && process.versions.gelectron);
+      document.getElementById('title').textContent = (isG ? 'Gelectron' : 'Electron') + ' Benchmark';
+      document.getElementById('subtitle').textContent = process.platform + ' ' + process.arch + ' | Node ' + process.versions.node;
+    } catch(e) {}
+
+    function setStatus(t, done) {
+      document.getElementById('status-text').textContent = t;
+      document.getElementById('dot').className = done ? 'dot done' : 'dot running';
+    }
+
+    function bench(name, fn, iter) {
+      for (var i = 0; i < Math.min(iter, 50); i++) fn();
+      var times = [];
+      var bs = Math.max(1, Math.floor(iter / 10));
+      for (var b = 0; b < 10; b++) {
+        var t0 = performance.now();
+        for (var j = 0; j < bs; j++) fn();
+        times.push(performance.now() - t0);
+      }
+      var total = times.reduce(function(a,b){return a+b},0);
+      var ops = bs * 10;
+      return {
+        timeMs: +(total / 10).toFixed(2),
+        opsPerSec: +((ops / total) * 1000).toFixed(0)
+      };
+    }
+
+    function fmtOps(o) {
+      if (o >= 1e6) return (o/1e6).toFixed(2) + 'M';
+      if (o >= 1e3) return (o/1e3).toFixed(1) + 'K';
+      return '' + o;
+    }
+
+    function row(label, val) {
+      return '<div class="row"><span class="label">' + label + '</span><span class="value">' + val + '</span></div>';
+    }
+
+    (async function() {
+      var t = document.getElementById('target');
+      var tests = {};
+      var s = performance.now();
+
+      setStatus('DOM create / append…');
+      await new Promise(function(r){setTimeout(r,0)});
+      tests['DOM create/append'] = bench('dc', function() {
+        var el = document.createElement('div');
+        el.textContent = 'Hello';
+        t.appendChild(el);
+        t.removeChild(el);
+      }, 10000);
+
+      setStatus('DOM querySelector…');
+      await new Promise(function(r){setTimeout(r,0)});
+      t.innerHTML = '';
+      for (var i = 0; i < 1000; i++) {
+        var el = document.createElement('div');
+        el.dataset.idx = i;
+        t.appendChild(el);
+      }
+      tests['DOM querySelector'] = bench('dq', function() {
+        t.querySelector('[data-idx="500"]');
+      }, 30000);
+
+      setStatus('Style recalc…');
+      await new Promise(function(r){setTimeout(r,0)});
+      var sty = document.createElement('style');
+      sty.textContent = '.s{color:red;font-size:14px;padding:8px;margin:4px;border:1px solid #000}';
+      document.head.appendChild(sty);
+      t.innerHTML = '';
+      for (var i = 0; i < 500; i++) {
+        var el = document.createElement('div');
+        el.className = 's';
+        el.textContent = 'Item ' + i;
+        t.appendChild(el);
+      }
+      tests['Style recalc'] = bench('sr', function() {
+        var items = t.querySelectorAll('.s');
+        for (var k = 0; k < items.length; k++) {
+          items[k].classList.toggle('s');
+          void items[k].offsetHeight;
+        }
+      }, 5000);
+
+      setStatus('Canvas 2D draw…');
+      await new Promise(function(r){setTimeout(r,0)});
+      var canvas = document.createElement('canvas');
+      canvas.width = 800; canvas.height = 600;
+      document.body.appendChild(canvas);
+      var ctx = canvas.getContext('2d');
+      tests['Canvas 2D draw'] = bench('cv', function() {
+        ctx.fillStyle = '#4ecdc4';
+        ctx.fillRect(0, 0, 100, 100);
+        ctx.strokeStyle = '#ff6b6b';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(200, 200, 50, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.font = '16px sans-serif';
+        ctx.fillText('Benchmark', 300, 300);
+      }, 15000);
+
+      setStatus('JSON parse…');
+      await new Promise(function(r){setTimeout(r,0)});
+      var bigArr = [];
+      for (var i = 0; i < 500; i++) bigArr.push({id:i,vals:[Math.random(),Math.random()]});
+      var bigStr = JSON.stringify(bigArr);
+      tests['JSON parse'] = bench('js', function() { JSON.parse(bigStr); }, 20000);
+
+      setStatus('Array sort (10k)…');
+      await new Promise(function(r){setTimeout(r,0)});
+      tests['Array sort (10k)'] = bench('as', function() {
+        var a = [];
+        for (var i = 0; i < 10000; i++) a.push(Math.random());
+        a.sort(function(x,y){return x-y});
+      }, 500);
+
+      setStatus('Fibonacci(25)…');
+      await new Promise(function(r){setTimeout(r,0)});
+      function fib(n) { return n <= 1 ? n : fib(n-1) + fib(n-2); }
+      tests['Fibonacci(25)'] = bench('fb', function() { fib(25); }, 30);
+
+      setStatus('Collecting memory…', false);
+      await new Promise(function(r){setTimeout(r,0)});
+      var mem = {};
+      try {
+        var m = process.memoryUsage();
+        mem = {
+          RSS: (m.rss/1048576).toFixed(1) + ' MB',
+          'Heap used': (m.heapUsed/1048576).toFixed(1) + ' MB',
+          'Heap total': (m.heapTotal/1048576).toFixed(1) + ' MB',
+          External: (m.external/1048576).toFixed(1) + ' MB'
+        };
+      } catch(e) { mem = {Note: 'memory not available'}; }
+
+      var elapsed = ((performance.now() - s) / 1000).toFixed(1);
+      setStatus('Done in ' + elapsed + 's — close window to exit', true);
+
+      // Render
+      var perf = document.getElementById('perf-card');
+      var h = '';
+      for (var name in tests) {
+        h += row(name, fmtOps(tests[name].opsPerSec) + ' ops/s  (' + tests[name].timeMs + ' ms)');
+      }
+      perf.innerHTML = h;
+
+      var mc = document.getElementById('mem-card');
+      h = '';
+      for (var k in mem) h += row(k, mem[k]);
+      mc.innerHTML = h;
+
+      document.getElementById('results').style.display = 'block';
+    })();
+  </script>
+</body>
+</html>
