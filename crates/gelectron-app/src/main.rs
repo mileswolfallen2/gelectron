@@ -288,6 +288,9 @@ if (typeof Module._resolveRequest === 'function') {{
 // Pre-load the gelectron shim so require('electron') hits cache
 require(path.join(compatPath, 'index.js'));
 
+// Periodic GC to keep memory low
+setInterval(function() {{ if (global.gc) global.gc(); }}, 5000);
+
 require('{}');
 "#,
         main_script.display().to_string().replace('\\', "\\\\").replace('\'', "\\'"),
@@ -297,6 +300,8 @@ require('{}');
     );
 
     let mut child: Child = Command::new(&node_path)
+        .arg("--max-old-space-size=64")
+        .arg("--expose-gc")
         .arg("-e")
         .arg(&setup_script)
         .stdin(Stdio::piped())
