@@ -21,6 +21,10 @@ benchmark/result-*.json
 # Electron
 electron/
 
+# Electron compat layer (generated)
+src/electron/
+npm/darwin-arm64/
+
 # OS
 .DS_Store
 Thumbs.db
