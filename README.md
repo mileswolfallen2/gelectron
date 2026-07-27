@@ -360,7 +360,8 @@ gelectron --help              # Show help
 - [ ] DevTools integration
 - [ ] App sandboxing
 - [x] Package/distribution tooling
-- [ ] Performance benchmarks vs Electron
+- [x] Performance benchmarks vs Electron
+- [ ] Performance good benchmarks vs Electron
 
 ## Contributing
 
