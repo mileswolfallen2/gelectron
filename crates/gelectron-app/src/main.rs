@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::sync::Arc;
 
+use image::ImageEncoder;
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::{Fullscreen, WindowBuilder, WindowId};
@@ -75,6 +76,34 @@ enum ToRust {
     },
     #[serde(rename = "close-popup-menu")]
     ClosePopupMenu,
+    #[serde(rename = "clipboard-read-text")]
+    ClipboardReadText { request_id: String },
+    #[serde(rename = "clipboard-write-text")]
+    ClipboardWriteText { text: String },
+    #[serde(rename = "clipboard-read-image")]
+    ClipboardReadImage { request_id: String },
+    #[serde(rename = "clipboard-write-image")]
+    ClipboardWriteImage { data: String },
+    #[serde(rename = "screen-get-displays")]
+    ScreenGetDisplays { request_id: String },
+    #[serde(rename = "native-theme-query")]
+    NativeThemeQuery { request_id: String },
+    #[serde(rename = "dialog-open")]
+    DialogOpen { request_id: String, options: serde_json::Value },
+    #[serde(rename = "dialog-save")]
+    DialogSave { request_id: String, options: serde_json::Value },
+    #[serde(rename = "dialog-message")]
+    DialogMessage { request_id: String, options: serde_json::Value },
+    #[serde(rename = "dialog-error")]
+    DialogError { title: String, content: String },
+    #[serde(rename = "shell-open-external")]
+    ShellOpenExternal { url: String },
+    #[serde(rename = "shell-open-path")]
+    ShellOpenPath { path: String },
+    #[serde(rename = "shell-show-in-folder")]
+    ShellShowInFolder { path: String },
+    #[serde(rename = "shell-move-to-trash")]
+    ShellMoveToTrash { path: String, request_id: Option<String> },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -92,6 +121,13 @@ enum ToNode {
     },
     #[serde(rename = "ready")]
     Ready,
+    #[serde(rename = "response")]
+    Response {
+        request_id: String,
+        result: serde_json::Value,
+        #[serde(default)]
+        error: Option<String>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -125,6 +161,8 @@ struct AppState {
     window_wids: HashMap<WindowId, u32>,
     node_stdin: Option<std::process::ChildStdin>,
     node_exited: Arc<AtomicBool>,
+    bundle_js: Option<String>,
+    response_tx: Option<mpsc::Sender<(String, serde_json::Value)>>,
 }
 
 impl AppState {
@@ -134,6 +172,8 @@ impl AppState {
             window_wids: HashMap::new(),
             node_stdin: None,
             node_exited,
+            bundle_js: None,
+            response_tx: None,
         }
     }
 
@@ -363,8 +403,10 @@ require('{}');
 
     let event_loop = EventLoopBuilder::new().build();
     let (ipc_tx, ipc_rx) = mpsc::channel::<ToNode>();
+    let (response_tx, response_rx) = mpsc::channel::<(String, serde_json::Value)>();
     let mut state = AppState::new(node_exited.clone());
     state.node_stdin = Some(child_stdin);
+    state.response_tx = Some(response_tx);
     let state = Rc::new(RefCell::new(state));
     state.borrow_mut().send_to_node(&ToNode::Ready);
 
@@ -381,6 +423,14 @@ require('{}');
 
         match event {
             Event::NewEvents(StartCause::Poll) => {
+                // Drain async responses from background threads (dialogs, clipboard, etc.)
+                while let Ok((request_id, result)) = response_rx.try_recv() {
+                    st.send_to_node(&ToNode::Response {
+                        request_id,
+                        result,
+                        error: None,
+                    });
+                }
                 while let Ok(msg) = ipc_rx.try_recv() { st.send_to_node(&msg); }
                 while let Ok(msg) = rx.try_recv() {
                     handle_to_rust(msg, &mut st, event_loop_target, &ipc_tx, None, control_flow);
@@ -446,11 +496,15 @@ window.__gelectron_run_main(`{}`);
 
     let event_loop = EventLoopBuilder::new().build();
     let (ipc_tx, ipc_rx) = mpsc::channel::<ToNode>();
+    let (response_tx, response_rx) = mpsc::channel::<(String, serde_json::Value)>();
     // Channel for ToRust messages coming from the WebView IPC handler
     let (to_rust_tx, to_rust_rx) = mpsc::channel::<ToRust>();
     let to_rust_tx = Arc::new(to_rust_tx);
     let node_exited = Arc::new(AtomicBool::new(false));
-    let state = Rc::new(RefCell::new(AppState::new(node_exited.clone())));
+    let mut app_state = AppState::new(node_exited.clone());
+    app_state.bundle_js = Some(bundle_js.clone());
+    app_state.response_tx = Some(response_tx);
+    let state = Rc::new(RefCell::new(app_state));
 
     event_loop.run(move |event, event_loop_target, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -458,6 +512,18 @@ window.__gelectron_run_main(`{}`);
 
         match event {
             Event::NewEvents(StartCause::Poll) => {
+                // Drain async responses from background threads (dialogs, clipboard, etc.)
+                while let Ok((request_id, result)) = response_rx.try_recv() {
+                    if let Some(pair) = st.windows.get(&1u32) {
+                        let js = format!(
+                            "window.__gelectron_response('{}', {});",
+                            request_id,
+                            serde_json::to_string(&result).unwrap_or_default()
+                        );
+                        let _ = pair.webview.evaluate_script(&js);
+                    }
+                }
+
                 // Drain IPC messages from webview → forward back into the same webview
                 while let Ok(msg) = ipc_rx.try_recv() {
                     if let Some(pair) = st.windows.get(&1u32) {
@@ -473,6 +539,9 @@ window.__gelectron_run_main(`{}`);
                             }
                             ToNode::Ready => {
                                 serde_json::json!({"__from_node":true,"type":"ready"})
+                            }
+                            ToNode::Response { request_id, result, error } => {
+                                serde_json::json!({"__from_node":true,"type":"response","request_id":request_id,"result":result,"error":error})
                             }
                         };
                         let _ = pair.webview.evaluate_script(
@@ -635,6 +704,34 @@ fn build_menu_items_inner(parent: &muda::Menu, items: &serde_json::Value) {
     }
 }
 
+fn detect_dark_mode() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        // Check NSAppearance via objc (works without extra crates since tao re-exports cocoa)
+        std::env::var("APPLE_INTERFACE_STYLE")
+            .map(|v| v == "Dark")
+            .unwrap_or(false)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // Check registry for AppsUseLightTheme (0 = dark)
+        std::process::Command::new("reg")
+            .args(["query", r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize", "/v", "AppsUseLightTheme"])
+            .output()
+            .map(|o| {
+                let s = String::from_utf8_lossy(&o.stdout);
+                s.contains("0x0")
+            })
+            .unwrap_or(false)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("GTK_THEME")
+            .map(|v| v.to_lowercase().contains("dark"))
+            .unwrap_or(false)
+    }
+}
+
 fn handle_to_rust(
     msg: ToRust,
     st: &mut AppState,
@@ -665,9 +762,10 @@ fn handle_to_rust(
                     let ipc_tx_clone = ipc_tx.clone();
                     let to_rust_tx_clone = to_rust_tx.cloned();
                     let wid_for_ipc = id;
+                    let init = st.bundle_js.clone().unwrap_or_else(|| preload_script());
                     match WebViewBuilder::new()
                         .with_url(&url)
-                        .with_initialization_script(&preload_script())
+                        .with_initialization_script(&init)
                         .with_devtools(true)
                         .with_ipc_handler(move |req| {
                             let body = req.body().to_string();
@@ -718,22 +816,34 @@ fn handle_to_rust(
         ToRust::LoadFile { id, path } => {
             let url = format!("file://{}", std::fs::canonicalize(&path).unwrap_or_default().display());
             log::info!("Loading file in window {}: {}", id, url);
+            let init = st.bundle_js.clone().unwrap_or_else(|| preload_script());
             if let Some(pair) = st.windows.get_mut(&id) {
                 let window = &pair.window;
                 let ipc_tx_clone = ipc_tx.clone();
+                let to_rust_tx_clone = to_rust_tx.cloned();
                 let wid_for_ipc = id;
                 match WebViewBuilder::new()
                     .with_url(&url)
-                    .with_initialization_script(&preload_script())
+                    .with_initialization_script(&init)
                     .with_devtools(true)
                     .with_ipc_handler(move |req| {
                         let body = req.body().to_string();
-                        if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&body) {
-                            let msg_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
+                            if let Some(ref tx) = to_rust_tx_clone {
+                                if let Ok(cmd) = serde_json::from_value::<ToRust>(val.clone()) {
+                                    let _ = tx.send(cmd);
+                                    return;
+                                }
+                            }
+                            let msg_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
                             if msg_type == "ipc-send" {
-                                let channel = msg.get("channel").and_then(|v| v.as_str()).unwrap_or("");
-                                let args = msg.get("args").cloned().unwrap_or(serde_json::Value::Null);
+                                let channel = val.get("channel").and_then(|v| v.as_str()).unwrap_or("");
+                                let args = val.get("args").cloned().unwrap_or(serde_json::Value::Null);
                                 let _ = ipc_tx_clone.send(ToNode::IpcMessage { id: wid_for_ipc, channel: channel.to_string(), data: args });
+                            } else if msg_type == "quit" {
+                                if let Some(ref tx) = to_rust_tx_clone {
+                                    let _ = tx.send(ToRust::Quit);
+                                }
                             }
                         }
                     })
@@ -804,6 +914,292 @@ fn handle_to_rust(
         }
         ToRust::ClosePopupMenu => {
             log::info!("Close popup menu requested");
+        }
+        ToRust::ClipboardReadText { request_id } => {
+            let text = arboard::Clipboard::new()
+                .and_then(|mut c| c.get_text().map(|s| s.to_string()))
+                .unwrap_or_default();
+            if let Some(ref tx) = st.response_tx {
+                let _ = tx.send((request_id, serde_json::json!(text)));
+            }
+        }
+        ToRust::ClipboardWriteText { text } => {
+            if let Ok(mut c) = arboard::Clipboard::new() {
+                let _ = c.set_text(&text);
+            }
+        }
+        ToRust::ClipboardReadImage { request_id } => {
+            let data_b64 = arboard::Clipboard::new()
+                .and_then(|mut c| c.get_image())
+                .ok()
+                .and_then(|img| {
+                    // Convert ARGB to RGBA for PNG encoding
+                    let w = img.width;
+                    let h = img.height;
+                    let bytes = &img.bytes;
+                    let mut rgba = Vec::with_capacity(w * h * 4);
+                    for chunk in bytes.chunks_exact(4) {
+                        if chunk.len() >= 4 {
+                            rgba.extend_from_slice(&[chunk[1], chunk[2], chunk[3], chunk[0]]);
+                        }
+                    }
+                    // Encode as PNG
+                    image::RgbaImage::from_raw(w as u32, h as u32, rgba)
+                        .and_then(|img_buf| {
+                            let mut buf = std::io::Cursor::new(Vec::new());
+                            image::codecs::png::PngEncoder::new(&mut buf)
+                                .write_image(
+                                    &img_buf,
+                                    img_buf.width(),
+                                    img_buf.height(),
+                                    image::ExtendedColorType::Rgba8,
+                                ).ok()?;
+                            use base64::Engine;
+                            Some(base64::engine::general_purpose::STANDARD.encode(buf.into_inner()))
+                        })
+                })
+                .unwrap_or_default();
+            if let Some(ref tx) = st.response_tx {
+                let _ = tx.send((request_id, serde_json::json!(data_b64)));
+            }
+        }
+        ToRust::ClipboardWriteImage { data } => {
+            if let Ok(mut c) = arboard::Clipboard::new() {
+                use base64::Engine;
+                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data) {
+                    if let Ok(img) = image::load_from_memory(&bytes) {
+                        let rgba = img.to_rgba8();
+                        let (w, h) = rgba.dimensions();
+                        let raw = rgba.into_raw();
+                        // Convert RGBA to ARGB for arboard
+                        let mut argb = Vec::with_capacity(raw.len());
+                        for chunk in raw.chunks_exact(4) {
+                            argb.extend_from_slice(&[chunk[3], chunk[0], chunk[1], chunk[2]]);
+                        }
+                        let _ = c.set_image(arboard::ImageData {
+                            width: w as usize,
+                            height: h as usize,
+                            bytes: argb.into(),
+                        });
+                    }
+                }
+            }
+        }
+        ToRust::ScreenGetDisplays { request_id } => {
+            let monitors: Vec<serde_json::Value> = event_loop_target.available_monitors().map(|m| {
+                let pos = m.position();
+                let size = m.size();
+                let work_height = if size.height > 40 { size.height - 40 } else { size.height };
+                serde_json::json!({
+                    "id": (pos.x as i64).abs() as u32 * 1000 + (pos.y as i64).abs() as u32,
+                    "label": m.name().unwrap_or_else(|| "Display".to_string()),
+                    "bounds": { "x": pos.x, "y": pos.y, "width": size.width, "height": size.height },
+                    "workArea": { "x": pos.x, "y": pos.y, "width": size.width, "height": work_height },
+                    "size": { "width": size.width, "height": size.height },
+                    "workAreaSize": { "width": size.width, "height": work_height },
+                    "scaleFactor": m.scale_factor(),
+                    "rotation": 0,
+                    "internal": false,
+                    "touchSupport": "unknown"
+                })
+            }).collect();
+            if let Some(ref tx) = st.response_tx {
+                let _ = tx.send((request_id, serde_json::json!({"displays": monitors})));
+            }
+        }
+        ToRust::NativeThemeQuery { request_id } => {
+            let dark = detect_dark_mode();
+            if let Some(ref tx) = st.response_tx {
+                let _ = tx.send((request_id, serde_json::json!({
+                    "shouldUseDarkColors": dark,
+                    "themeSource": "system"
+                })));
+            }
+        }
+        ToRust::DialogOpen { request_id, options } => {
+            let tx = st.response_tx.clone();
+            thread::spawn(move || {
+                let mut fd = rfd::FileDialog::new();
+                if let Some(title) = options.get("title").and_then(|v| v.as_str()) {
+                    fd = fd.set_title(title);
+                }
+                if let Some(dir) = options.get("defaultPath").and_then(|v| v.as_str()) {
+                    fd = fd.set_directory(dir);
+                }
+                // Parse filters
+                if let Some(filters) = options.get("filters").and_then(|v| v.as_array()) {
+                    for filter in filters {
+                        if let Some(name) = filter.get("name").and_then(|v| v.as_str()) {
+                            if let Some(exts) = filter.get("extensions").and_then(|v| v.as_array()) {
+                                let ext_strs: Vec<&str> = exts.iter().filter_map(|e| e.as_str()).collect();
+                                fd = fd.add_filter(name, &ext_strs);
+                            }
+                        }
+                    }
+                }
+                let result = fd.pick_files();
+                let response = serde_json::json!({
+                    "canceled": result.is_none(),
+                    "filePaths": result.map(|v| v.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()).unwrap_or_default()
+                });
+                if let Some(ref tx) = tx {
+                    let _ = tx.send((request_id, response));
+                }
+            });
+        }
+        ToRust::DialogSave { request_id, options } => {
+            let tx = st.response_tx.clone();
+            thread::spawn(move || {
+                let mut fd = rfd::FileDialog::new();
+                if let Some(title) = options.get("title").and_then(|v| v.as_str()) {
+                    fd = fd.set_title(title);
+                }
+                if let Some(dir) = options.get("defaultPath").and_then(|v| v.as_str()) {
+                    fd = fd.set_directory(dir);
+                }
+                if let Some(name) = options.get("defaultPath").and_then(|v| v.as_str()) {
+                    fd = fd.set_file_name(name);
+                }
+                let result = fd.save_file();
+                let response = serde_json::json!({
+                    "canceled": result.is_none(),
+                    "filePath": result.map(|p| p.display().to_string())
+                });
+                if let Some(ref tx) = tx {
+                    let _ = tx.send((request_id, response));
+                }
+            });
+        }
+        ToRust::DialogMessage { request_id, options } => {
+            let tx = st.response_tx.clone();
+            let title = options.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let message = options.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let detail = options.get("detail").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let buttons: Vec<String> = options.get("buttons")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|b| b.as_str().map(|s| s.to_string())).collect())
+                .unwrap_or_else(|| vec!["OK".to_string()]);
+            thread::spawn(move || {
+                let desc = if detail.is_empty() { message } else { format!("{}\n{}", message, detail) };
+                let mut dialog = rfd::MessageDialog::new()
+                    .set_title(&title)
+                    .set_description(&desc);
+                // Set buttons based on count
+                let btn_count = buttons.len();
+                if btn_count == 2 {
+                    dialog = dialog.set_buttons(rfd::MessageButtons::OkCancel);
+                } else if btn_count >= 3 {
+                    dialog = dialog.set_buttons(rfd::MessageButtons::OkCancel);
+                } else {
+                    dialog = dialog.set_buttons(rfd::MessageButtons::Ok);
+                }
+                let result = dialog.show();
+                let response_idx = match result {
+                    rfd::MessageDialogResult::Ok => 0,
+                    rfd::MessageDialogResult::Cancel => 1,
+                    rfd::MessageDialogResult::Yes => 0,
+                    rfd::MessageDialogResult::No => 1,
+                    _ => 0,
+                };
+                let response = serde_json::json!({
+                    "response": response_idx,
+                    "checkboxChecked": false
+                });
+                if let Some(ref tx) = tx {
+                    let _ = tx.send((request_id, response));
+                }
+            });
+        }
+        ToRust::DialogError { title, content } => {
+            let tx = st.response_tx.clone();
+            let rid = String::new();
+            thread::spawn(move || {
+                rfd::MessageDialog::new()
+                    .set_title(&title)
+                    .set_description(&content)
+                    .set_level(rfd::MessageLevel::Error)
+                    .set_buttons(rfd::MessageButtons::Ok)
+                    .show();
+                if let Some(ref tx) = tx {
+                    let _ = tx.send((rid, serde_json::json!({})));
+                }
+            });
+        }
+        ToRust::ShellOpenExternal { url } => {
+            let _ = open::that(&url);
+        }
+        ToRust::ShellOpenPath { path } => {
+            let _ = open::that(&path);
+        }
+        ToRust::ShellShowInFolder { path } => {
+            #[cfg(target_os = "macos")]
+            { let _ = std::process::Command::new("open").arg("-R").arg(&path).spawn(); }
+            #[cfg(target_os = "windows")]
+            { let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path)).spawn(); }
+            #[cfg(target_os = "linux")]
+            {
+                if let Some(parent) = std::path::Path::new(&path).parent() {
+                    let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+                }
+            }
+        }
+        ToRust::ShellMoveToTrash { path, request_id } => {
+            let result = if std::path::Path::new(&path).exists() {
+                #[cfg(target_os = "macos")]
+                {
+                    std::process::Command::new("trash").arg(&path).status()
+                        .map(|s| s.success())
+                        .unwrap_or_else(|_| {
+                            // Fallback: move to ~/.Trash
+                            if let Some(name) = std::path::Path::new(&path).file_name() {
+                                let trash = std::env::var("HOME")
+                                    .map(|h| std::path::PathBuf::from(h).join(".Trash").join(name))
+                                    .unwrap_or_default();
+                                std::fs::rename(&path, &trash).is_ok()
+                            } else {
+                                false
+                            }
+                        })
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    std::process::Command::new("gio").args(["trash", &path]).status()
+                        .map(|s| s.success())
+                        .unwrap_or_else(|_| {
+                            let trash_dir = std::env::var("HOME")
+                                .map(|h| std::path::PathBuf::from(h).join(".local/share/Trash/files"))
+                                .unwrap_or_default();
+                            if let Some(name) = std::path::Path::new(&path).file_name() {
+                                std::fs::create_dir_all(&trash_dir).ok();
+                                let dest = trash_dir.join(name);
+                                std::fs::rename(&path, &dest).is_ok()
+                            } else {
+                                false
+                            }
+                        })
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    std::process::Command::new("powershell")
+                        .args(["-Command", &format!("Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::MoveToBasket('{}')", path.replace('\'', "''"))])
+                        .status()
+                        .is_ok()
+                }
+                #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+                {
+                    std::fs::remove_file(&path).is_ok()
+                }
+            } else {
+                false
+            };
+            if let Some(rid) = request_id {
+                if let Some(ref tx) = st.response_tx {
+                    let _ = tx.send((rid, serde_json::json!({
+                        "success": result,
+                        "error": if result { serde_json::Value::Null } else { serde_json::json!("Failed to move to trash") }
+                    })));
+                }
+            }
         }
         _ => {}
     }

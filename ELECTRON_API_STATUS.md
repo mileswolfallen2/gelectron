@@ -18,11 +18,11 @@
 | 3 | BaseWindow | NO | NO | NO | **missing** | Parent class for BrowserWindow, not implemented |
 | 4 | BrowserView | NO | NO | NO | **missing** | Deprecated in favor of WebContentsView |
 | 5 | BrowserWindow | YES | YES | YES | **partial** | create/show/hide/focus/min/max/close/destroy/setTitle/setSize/loadURL/loadFile. Missing: DevTools, navigation, capturePage, print, printToPDF |
-| 6 | clipboard | NO | inline | YES | **stub** | readText/writeText no-ops, missing readHTML/writeHTML/readBookmark etc. |
+| 6 | clipboard | YES | inline | YES | **partial** | readText/writeText/readImage/writeImage/readHTML/writeHTML/readBookmark/writeBookmark/clear/has/readFindText, talks to Rust via bridge |
 | 7 | contentTracing | NO | NO | NO | **missing** | Tracing/recording profiling data |
 | 8 | crashReporter | NO | NO | NO | **missing** | Crash upload to server |
 | 9 | desktopCapturer | NO | NO | NO | **missing** | Screen/window capture source enumeration |
-| 10 | dialog | YES | YES | YES | **partial** | showOpenDialog/showSaveDialog/showMessageBox/showErrorBox. Native dialogs not wired |
+| 10 | dialog | YES | YES | YES | **partial** | showOpenDialog/showSaveDialog/showMessageBox/showErrorBox. Native dialogs wired via rfd (Rust) |
 | 11 | globalShortcut | NO | inline | YES | **stub** | register() always returns true, does nothing |
 | 12 | ipcMain | YES | YES | YES | **full** | handle/handleOnce/on/once/removeHandler, full EventEmitter |
 | 13 | ImageView | NO | NO | NO | **missing** | New in Electron 33+, image display view |
@@ -31,7 +31,7 @@
 | 16 | MenuItem | YES | YES | YES | **partial** | All properties present (id/label/type/role/accelerator/enabled/visible/checked/submenu/click). Missing: role auto-behavior |
 | 17 | MessageChannelMain | NO | NO | NO | **missing** | MessagePort-based IPC between main/renderer |
 | 18 | nativeImage | YES | YES | YES | **partial** | createFromPath/Buffer/DataURL, toDataURL, getSize. Missing: resize/crop pixel transform, proper toPNG/toJPEG |
-| 19 | nativeTheme | NO | NO | NO | **missing** | Dark mode detection, shouldUseDarkColors, themeSource |
+| 19 | nativeTheme | YES | inline | YES | **partial** | NativeTheme class: shouldUseDarkColors (getter + method), themeSource (getter/setter), shouldSystemUseDarkColors, queries Rust for system theme. systemPreferences.isDarkMode() linked |
 | 20 | net | NO | inline | YES | **partial** | fetch delegates to globalThis.fetch. Missing: net.request(), ClientRequest API |
 | 21 | netLog | NO | NO | NO | **missing** | Network log capture |
 | 22 | Notification | YES | YES | YES | **partial** | API surface complete, show via browser Notification API if available. No native OS integration |
@@ -40,13 +40,13 @@
 | 25 | protocol | NO | inline (session) | NO | **missing** | Custom protocol registration (standalone module). Session stubs exist |
 | 26 | pushNotifications | NO | NO | NO | **missing** | macOS push notification registration |
 | 27 | safeStorage | YES | YES | YES | **stub** | Base64 encoding, not real encryption |
-| 28 | screen | NO | inline | YES | **stub** | Hardcoded 1920x1080 primary display |
+| 28 | screen | YES | inline | YES | **partial** | Screen class: getPrimaryDisplay/getAllDisplays/getDisplayMatching/getCursorScreenPoint/getMenuBarHeight, fetches real monitor info from Rust via bridge |
 | 29 | ServiceWorkerMain | NO | NO | NO | **missing** | Service worker management in main process |
 | 30 | session | NO | inline | YES | **stub** | defaultSession + fromPartition stubs, all no-ops |
 | 31 | sharedTexture | NO | NO | NO | **missing** | Shared texture between processes |
 | 32 | ShareMenu | NO | NO | NO | **missing** | macOS share sheet |
-| 33 | shell | YES | YES | YES | **partial** | openExternal/openPath work in Node.js mode. moveItemToTrash deletes permanently, shortcut stubs |
-| 34 | systemPreferences | NO | inline | YES | **stub** | Hardcoded dark mode / accent color |
+| 33 | shell | YES | YES | YES | **partial** | openExternal/openPath (open crate), showItemInFolder (platform commands), moveItemToTrash (trash/fallback), beep. Shortcut stubs |
+| 34 | systemPreferences | NO | inline | YES | **stub** | isDarkMode() linked to nativeTheme. Most other methods are no-ops |
 | 35 | TouchBar | NO | NO | NO | **missing** | macOS Touch Bar. Sub-classes: TouchBarButton, TouchBarColorPicker, TouchBarGroup, TouchBarLabel, TouchBarOtherItemsProxy, TouchBarPopover, TouchBarScrubber, TouchBarSegmentedControl, TouchBarSlider, TouchBarSpacer |
 | 36 | Tray | YES | YES | YES | **stub** | API surface present, no native system tray |
 | 37 | utilityProcess | NO | NO | NO | **missing** | Fork utility child processes |
@@ -59,7 +59,7 @@
 
 | # | Module | File | webview-bundle | index.js | Status | Notes |
 |---|--------|------|----------------|----------|--------|-------|
-| 42 | clipboard (renderer) | NO | inline | YES | **stub** | Same as main process stub |
+| 42 | clipboard (renderer) | NO | inline | YES | **partial** | Same as main process: readText/writeText/readImage/writeImage/clear/has via bridge |
 | 43 | contextBridge | YES | YES | YES | **partial** | exposeInMainWorld with deep freeze. No real world isolation |
 | 44 | crashReporter (renderer) | NO | NO | NO | **missing** | Renderer-side crash reporter |
 | 45 | ipcRenderer | YES | NO (inline) | NO (via require hook) | **partial** | invoke/send/sendSync/on/once/removeListener. Bridge not always wired |
@@ -72,7 +72,7 @@
 | # | Module | File | webview-bundle | index.js | Status | Notes |
 |---|--------|------|----------------|----------|--------|-------|
 | 49 | nativeImage | YES | YES | YES | **partial** | createFromPath/Buffer/DataURL, toDataURL, getSize. Missing: resize/crop transform |
-| 50 | shell | YES | YES | YES | **partial** | openExternal/openPath in Node mode |
+| 50 | shell | YES | YES | YES | **partial** | openExternal/openPath/showItemInFolder/moveItemToTrash/beep via bridge (open crate + platform commands) |
 
 ## Deprecated / Internal
 
@@ -102,9 +102,9 @@
 | Status | Count | Modules |
 |--------|-------|---------|
 | **full** | 2 | app, ipcMain |
-| **partial** | 12 | BrowserWindow, Menu, MenuItem, dialog, shell, Notification, nativeImage, contextBridge, webContents, ipcRenderer, net, process |
-| **stub** | 9 | Tray, safeStorage, autoUpdater, session, clipboard, screen, systemPreferences, powerMonitor, globalShortcut |
-| **missing** | 38 | BaseWindow, BrowserView, contentTracing, crashReporter, desktopCapturer, ImageView, inAppPurchase, MessageChannelMain, nativeTheme, netLog, powerSaveBlocker, protocol, pushNotifications, ServiceWorkerMain, sharedTexture, ShareMenu, TouchBar (+10 sub-classes), utilityProcess, View, WebContentsView, webFrameMain, webFrame, webUtils, crashReporter (renderer), sharedTexture (renderer), remote, webviewTag, navigation-history, parent-port, web-request, web-socket, window-open |
+| **partial** | 15 | BrowserWindow, Menu, MenuItem, dialog, shell, Notification, nativeImage, contextBridge, webContents, ipcRenderer, net, process, clipboard, screen, nativeTheme |
+| **stub** | 7 | Tray, safeStorage, autoUpdater, session, systemPreferences, powerMonitor, globalShortcut |
+| **missing** | 37 | BaseWindow, BrowserView, contentTracing, crashReporter, desktopCapturer, ImageView, inAppPurchase, MessageChannelMain, netLog, powerSaveBlocker, protocol, pushNotifications, ServiceWorkerMain, sharedTexture, ShareMenu, TouchBar (+10 sub-classes), utilityProcess, View, WebContentsView, webFrameMain, webFrame, webUtils, crashReporter (renderer), sharedTexture (renderer), remote, webviewTag, navigation-history, parent-port, web-request, web-socket, window-open, local-ai-handler |
 | **Total** | **60** | | |
 
 ## Rust Bridge (main.rs ToRust commands)
@@ -129,3 +129,18 @@ These commands are implemented on the Rust side and can be triggered from the We
 | set-application-menu | YES | Set native menu via muda (macOS: init_for_nsapp) |
 | popup-menu | YES | Show context menu via muda |
 | close-popup-menu | YES | Close context menu |
+| clipboard-read-text | YES | Read clipboard text via arboard |
+| clipboard-write-text | YES | Write text to clipboard via arboard |
+| clipboard-read-image | YES | Read clipboard image (base64 PNG) via arboard |
+| clipboard-write-image | YES | Write image to clipboard via arboard |
+| screen-get-displays | YES | Query monitor info via tao |
+| native-theme-query | YES | Detect dark mode via platform API |
+| dialog-open | YES | Show native open file dialog via rfd |
+| dialog-save | YES | Show native save file dialog via rfd |
+| dialog-message | YES | Show native message box via rfd |
+| dialog-error | YES | Show native error box via rfd |
+| shell-open-external | YES | Open URL in default browser via open crate |
+| shell-open-path | YES | Open file in default app via open crate |
+| shell-show-in-folder | YES | Reveal file in Finder/Explorer via platform command |
+| shell-move-to-trash | YES | Move file to trash via platform API |
+| shell-beep | YES | Play system beep |

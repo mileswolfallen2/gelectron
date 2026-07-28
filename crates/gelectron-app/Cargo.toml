@@ -18,3 +18,8 @@ env_logger = { workspace = true }
 wry = "0.47"
 tao = "0.30"
 muda = "0.15"
+arboard = "3"
+rfd = "0.15"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+base64 = "0.22"
+open = "5"

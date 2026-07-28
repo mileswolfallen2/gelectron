@@ -1,10 +1,5 @@
 'use strict';
 
-/**
- * Gelectron Native Bridge - IPC between Node.js and the Rust binary.
- * When GELECTRON_NATIVE=1, communicates via stdin/stdout JSON lines.
- */
-
 const readline = require('readline');
 const { EventEmitter } = require('events');
 
@@ -16,6 +11,7 @@ class NativeBridge extends EventEmitter {
     this._ready = false;
     this._readyCallbacks = [];
     this._windowListeners = new Map();
+    this._pendingRequests = {};
 
     if (isNative) {
       this._setupStdio();
@@ -56,6 +52,27 @@ class NativeBridge extends EventEmitter {
       case 'ipc-message':
         this.emit('ipc-message', msg.id, msg.channel, msg.data);
         break;
+      case 'response':
+        this._resolveRequest(msg.request_id, msg.result, msg.error || null);
+        break;
+    }
+  }
+
+  _request(msg) {
+    return new Promise((resolve, reject) => {
+      const id = 'req-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
+      this._pendingRequests[id] = { resolve, reject };
+      msg.request_id = id;
+      this._send(msg);
+    });
+  }
+
+  _resolveRequest(requestId, result, error) {
+    const pending = this._pendingRequests[requestId];
+    if (pending) {
+      delete this._pendingRequests[requestId];
+      if (error) pending.reject(new Error(error));
+      else pending.resolve(result);
     }
   }
 

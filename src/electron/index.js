@@ -19,6 +19,9 @@ const contextBridge = require('./context-bridge');
 const webContents = require('./web-contents');
 const { autoUpdater, AutoUpdater } = require('./auto-updater');
 const { bridge, isNative } = require('./native-bridge');
+const clipboard = require('./clipboard');
+const { Screen } = require('./screen');
+const nativeTheme = require('./nativeTheme');
 
 if (isNative) {
   bridge.on('ipc-message', (windowId, channel, data) => {
@@ -94,32 +97,12 @@ module.exports = {
   autoUpdater,
   AutoUpdater,
   session: sessionStub,
+  clipboard,
+  screen: new Screen(),
+  nativeTheme,
 
-  // Aliases for common imports
-  clipboard: {
-    readText: () => '',
-    writeText: () => {},
-    readImage: () => nativeImage.createEmpty(),
-    writeImage: () => {},
-  },
-  screen: {
-    getPrimaryDisplay: () => ({
-      id: 0,
-      label: '',
-      bounds: { x: 0, y: 0, width: 1920, height: 1080 },
-      workArea: { x: 0, y: 0, width: 1920, height: 1040 },
-      size: { width: 1920, height: 1080 },
-      workAreaSize: { width: 1920, height: 1040 },
-      scaleFactor: 1.0,
-      rotation: 0,
-      internal: false,
-      touchSupport: 'unknown',
-    }),
-    getAllDisplays: () => [],
-    getDisplayMatching: () => null,
-  },
   systemPreferences: {
-    isDarkMode: () => false,
+    isDarkMode: () => nativeTheme.shouldUseDarkColors,
     getAccentColor: () => '#007AFF',
     getColor: () => '#ffffff',
     isSwipeTrackingFromScrollEventsEnabled: () => false,

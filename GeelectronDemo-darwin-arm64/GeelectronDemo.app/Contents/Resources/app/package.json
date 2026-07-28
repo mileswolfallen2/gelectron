@@ -1,0 +1,6 @@
+{
+  "name": "gelectron-demo",
+  "version": "1.0.0",
+  "description": "Minimal demo for gelectron — HTML, CSS, JavaScript rendering",
+  "main": "main.js"
+}

@@ -7,279 +7,379 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background: #0f0f1a;
-      color: #e0e0e0;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+    @keyframes gradientShift {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 20px rgba(123,104,238,0.15); }
+      50% { box-shadow: 0 0 30px rgba(123,104,238,0.3); }
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    @keyframes orbit {
+      from { transform: rotate(0deg) translateX(120px) rotate(0deg); }
+      to { transform: rotate(360deg) translateX(120px) rotate(-360deg); }
+    }
+    @keyframes typewriter {
+      from { width: 0; }
+      to { width: 100%; }
     }
 
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #08080f;
+      color: #e0e0e0;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Animated background ── */
+    .bg-orbs {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+    }
+    .bg-orbs .orb {
+      position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.35;
+      animation: float 8s ease-in-out infinite;
+    }
+    .bg-orbs .orb:nth-child(1) {
+      width: 400px; height: 400px; background: #7b68ee;
+      top: -100px; left: -80px; animation-delay: 0s;
+    }
+    .bg-orbs .orb:nth-child(2) {
+      width: 300px; height: 300px; background: #00d4ff;
+      top: 40%; right: -60px; animation-delay: -3s;
+    }
+    .bg-orbs .orb:nth-child(3) {
+      width: 250px; height: 250px; background: #ff6b9d;
+      bottom: -80px; left: 30%; animation-delay: -5s;
+    }
+
+    /* ── Header ── */
     header {
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      border-bottom: 1px solid #2a2a4a;
-      padding: 24px 32px;
+      position: relative; z-index: 1;
+      padding: 48px 40px 36px;
+      border-bottom: 1px solid rgba(123,104,238,0.15);
+      background: rgba(8,8,15,0.6);
+      backdrop-filter: blur(20px);
+    }
+    .header-top {
+      display: flex; align-items: center; gap: 16px; margin-bottom: 8px;
+    }
+    .logo-orbit {
+      position: relative; width: 56px; height: 56px; flex-shrink: 0;
+    }
+    .logo-orbit .core {
+      width: 32px; height: 32px; border-radius: 50%; position: absolute;
+      top: 12px; left: 12px;
+      background: linear-gradient(135deg, #7b68ee, #00d4ff);
+      animation: pulse 3s ease-in-out infinite;
+    }
+    .logo-orbit .ring {
+      position: absolute; inset: 0; border: 1.5px solid rgba(123,104,238,0.3);
+      border-radius: 50%; border-top-color: #7b68ee;
+      animation: spin 4s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .logo-orbit .dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #00d4ff;
+      position: absolute; top: -4px; left: 24px;
+      animation: orbit 6s linear infinite;
     }
 
     header h1 {
-      font-size: 28px;
-      font-weight: 700;
-      background: linear-gradient(90deg, #7b68ee, #00d4ff);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      font-size: 36px; font-weight: 800; letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #7b68ee 0%, #00d4ff 50%, #ff6b9d 100%);
+      background-size: 200% 200%;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      animation: gradientShift 6s ease infinite;
     }
-
-    header p {
-      margin-top: 6px;
-      color: #8888aa;
-      font-size: 14px;
+    header .tagline {
+      margin-top: 4px; color: #6a6a8a; font-size: 15px; font-weight: 400;
     }
+    header .tagline code {
+      color: #00d4ff; background: rgba(0,212,255,0.1);
+      padding: 2px 8px; border-radius: 4px; font-size: 13px;
+      font-family: 'SF Mono', Menlo, monospace;
+    }
+    .badges {
+      display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap;
+    }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04);
+      color: #b0b0cc;
+    }
+    .badge .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .badge .dot.green { background: #6bcb77; box-shadow: 0 0 6px #6bcb77; }
+    .badge .dot.blue { background: #00d4ff; box-shadow: 0 0 6px #00d4ff; }
+    .badge .dot.purple { background: #7b68ee; box-shadow: 0 0 6px #7b68ee; }
 
+    /* ── Grid ── */
     main {
-      flex: 1;
-      padding: 32px;
+      position: relative; z-index: 1;
+      padding: 32px 40px;
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 24px;
+      gap: 20px;
       align-content: start;
     }
+    .full { grid-column: 1 / -1; }
 
+    /* ── Cards ── */
     .card {
-      background: #1a1a2e;
-      border: 1px solid #2a2a4a;
-      border-radius: 12px;
+      background: rgba(18,18,32,0.7);
+      border: 1px solid rgba(123,104,238,0.12);
+      border-radius: 16px;
       padding: 24px;
+      backdrop-filter: blur(12px);
+      transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
+      animation: fadeInUp 0.6s ease backwards;
     }
-
+    .card:nth-child(1) { animation-delay: 0.05s; }
+    .card:nth-child(2) { animation-delay: 0.1s; }
+    .card:nth-child(3) { animation-delay: 0.15s; }
+    .card:nth-child(4) { animation-delay: 0.2s; }
+    .card:nth-child(5) { animation-delay: 0.25s; }
+    .card:nth-child(6) { animation-delay: 0.3s; }
+    .card:nth-child(7) { animation-delay: 0.35s; }
+    .card:nth-child(8) { animation-delay: 0.4s; }
+    .card:hover {
+      border-color: rgba(123,104,238,0.3);
+      box-shadow: 0 8px 32px rgba(123,104,238,0.08);
+      transform: translateY(-2px);
+    }
     .card h2 {
-      font-size: 16px;
-      font-weight: 600;
-      color: #7b68ee;
-      margin-bottom: 12px;
+      font-size: 15px; font-weight: 700; color: #c0bfff;
+      margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
     }
-
-    .card p, .card li {
-      font-size: 14px;
-      line-height: 1.7;
-      color: #b0b0cc;
+    .card h2 .icon {
+      width: 28px; height: 28px; border-radius: 8px; display: flex;
+      align-items: center; justify-content: center; font-size: 14px;
+      background: rgba(123,104,238,0.12); flex-shrink: 0;
     }
+    .card .sub { font-size: 13px; color: #6a6a8a; margin-bottom: 16px; }
 
-    .card ul {
-      list-style: none;
-      padding: 0;
-    }
-
-    .card ul li::before {
-      content: '\2713';
-      color: #00d4ff;
-      margin-right: 8px;
-      font-weight: bold;
-    }
-
-    .counter {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      margin-top: 8px;
-    }
-
+    /* ── Counter ── */
+    .counter { display: flex; align-items: center; gap: 20px; justify-content: center; }
     .counter button {
-      background: #2a2a4a;
-      color: #e0e0e0;
-      border: 1px solid #3a3a6a;
-      border-radius: 8px;
-      padding: 10px 20px;
-      font-size: 18px;
-      cursor: pointer;
-      transition: background 0.15s, transform 0.1s;
+      width: 48px; height: 48px; border-radius: 12px;
+      background: rgba(123,104,238,0.12); color: #c0bfff;
+      border: 1px solid rgba(123,104,238,0.2);
+      font-size: 22px; cursor: pointer;
+      transition: all 0.2s;
     }
-
-    .counter button:hover { background: #3a3a6a; }
-    .counter button:active { transform: scale(0.95); }
-
+    .counter button:hover { background: rgba(123,104,238,0.25); transform: scale(1.08); }
+    .counter button:active { transform: scale(0.92); }
     .counter .value {
-      font-size: 36px;
-      font-weight: 700;
-      color: #00d4ff;
-      min-width: 60px;
-      text-align: center;
+      font-size: 48px; font-weight: 800; font-variant-numeric: tabular-nums;
+      background: linear-gradient(135deg, #00d4ff, #7b68ee);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      min-width: 80px; text-align: center;
     }
 
-    .canvas-wrap {
-      margin-top: 12px;
+    /* ── Clock ── */
+    .clock-display {
+      text-align: center; padding: 8px 0;
     }
-
-    canvas {
-      background: #12121f;
-      border: 1px solid #2a2a4a;
-      border-radius: 8px;
-      display: block;
-      width: 100%;
-      height: 200px;
-    }
-
-    .color-bar {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-    }
-
-    .color-bar span {
-      flex: 1;
-      height: 32px;
-      border-radius: 6px;
-    }
-
-    #clock {
-      font-size: 32px;
-      font-weight: 300;
-      color: #00d4ff;
+    .clock-display .time {
+      font-size: 44px; font-weight: 200; letter-spacing: 2px;
       font-variant-numeric: tabular-nums;
-      margin-top: 4px;
+      background: linear-gradient(135deg, #00d4ff, #7b68ee);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .clock-display .date { font-size: 13px; color: #6a6a8a; margin-top: 4px; }
+
+    /* ── Canvas ── */
+    canvas {
+      width: 100%; height: 180px; border-radius: 12px; display: block;
+      background: rgba(8,8,15,0.5); border: 1px solid rgba(123,104,238,0.1);
     }
 
-    .env-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 8px;
+    /* ── Runtime info ── */
+    .info-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
     }
+    .info-item {
+      background: rgba(8,8,15,0.4); border-radius: 10px; padding: 12px;
+      border: 1px solid rgba(255,255,255,0.04);
+    }
+    .info-item .label { font-size: 11px; color: #6a6a8a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .info-item .val { font-size: 13px; color: #b0b0cc; font-family: 'SF Mono', Menlo, monospace; word-break: break-all; }
 
-    .env-table td {
-      padding: 6px 0;
-      font-size: 13px;
-      border-bottom: 1px solid #1f1f35;
+    /* ── Color spectrum ── */
+    .spectrum {
+      display: flex; gap: 4px; border-radius: 12px; overflow: hidden; height: 48px;
     }
+    .spectrum span {
+      flex: 1; transition: flex 0.4s cubic-bezier(0.34,1.56,0.64,1);
+      cursor: pointer; position: relative;
+    }
+    .spectrum span:hover { flex: 2; }
+    .spectrum span::after {
+      content: attr(data-label); position: absolute; bottom: 4px; left: 50%;
+      transform: translateX(-50%); font-size: 9px; font-weight: 700;
+      color: rgba(0,0,0,0.5); opacity: 0; transition: opacity 0.3s;
+    }
+    .spectrum span:hover::after { opacity: 1; }
 
-    .env-table td:first-child {
-      color: #7b68ee;
-      font-weight: 600;
-      width: 40%;
-    }
-
-    .env-table td:last-child {
-      color: #b0b0cc;
-      font-family: 'SF Mono', Menlo, monospace;
-    }
-
-    .test-card { grid-column: 1 / -1; }
-    .test-results { margin-top: 12px; }
-    .test-row {
-      display: flex;
-      align-items: center;
-      padding: 6px 0;
-      border-bottom: 1px solid #1f1f35;
-      font-size: 13px;
-    }
-    .test-row:last-child { border-bottom: none; }
-    .test-pass { color: #6bcb77; }
-    .test-fail { color: #ff6b6b; }
-    .test-name { flex: 1; color: #b0b0cc; }
-    .test-value { color: #8888aa; font-family: 'SF Mono', Menlo, monospace; margin-left: 12px; }
-
-    .btn-grid {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 12px;
-    }
+    /* ── Buttons ── */
+    .btn-grid { display: flex; flex-wrap: wrap; gap: 6px; }
     .btn-grid button {
-      background: #2a2a4a;
-      color: #e0e0e0;
-      border: 1px solid #3a3a6a;
-      border-radius: 8px;
-      padding: 8px 14px;
-      font-size: 13px;
-      cursor: pointer;
-      transition: background 0.15s, transform 0.1s;
+      padding: 7px 13px; border-radius: 8px; font-size: 12px;
+      font-family: 'SF Mono', Menlo, monospace;
+      background: rgba(123,104,238,0.08); color: #b0b0cc;
+      border: 1px solid rgba(123,104,238,0.15);
+      cursor: pointer; transition: all 0.2s; white-space: nowrap;
     }
-    .btn-grid button:hover { background: #3a3a6a; }
-    .btn-grid button:active { transform: scale(0.95); }
-    .btn-grid button.active { background: #7b68ee; border-color: #7b68ee; }
+    .btn-grid button:hover {
+      background: rgba(123,104,238,0.2); color: #e0e0e0;
+      border-color: rgba(123,104,238,0.4); transform: translateY(-1px);
+    }
+    .btn-grid button:active { transform: scale(0.96); }
 
     .demo-output {
-      margin-top: 10px;
-      background: #12121f;
-      border: 1px solid #2a2a4a;
-      border-radius: 8px;
-      padding: 12px;
-      font-family: 'SF Mono', Menlo, monospace;
-      font-size: 12px;
-      color: #b0b0cc;
-      white-space: pre-wrap;
-      word-break: break-all;
-      max-height: 180px;
-      overflow-y: auto;
-      display: none;
+      margin-top: 12px; background: rgba(8,8,15,0.6);
+      border: 1px solid rgba(123,104,238,0.1); border-radius: 10px;
+      padding: 14px; font-family: 'SF Mono', Menlo, monospace;
+      font-size: 12px; color: #8a8ab0; white-space: pre-wrap;
+      word-break: break-all; max-height: 200px; overflow-y: auto;
+      display: none; line-height: 1.6;
+      animation: fadeInUp 0.3s ease;
     }
+    .demo-output::-webkit-scrollbar { width: 6px; }
+    .demo-output::-webkit-scrollbar-track { background: transparent; }
+    .demo-output::-webkit-scrollbar-thumb { background: rgba(123,104,238,0.3); border-radius: 3px; }
 
-    footer {
-      padding: 16px 32px;
-      border-top: 1px solid #2a2a4a;
-      text-align: center;
-      font-size: 12px;
-      color: #555577;
+    /* ── Tests ── */
+    .test-header {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
     }
+    .test-pill {
+      padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 700;
+    }
+    .test-pill.pass { background: rgba(107,203,119,0.15); color: #6bcb77; }
+    .test-pill.fail { background: rgba(255,107,107,0.15); color: #ff6b6b; }
+    .test-row {
+      display: flex; align-items: center; padding: 5px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      font-size: 12px; transition: background 0.15s;
+    }
+    .test-row:hover { background: rgba(255,255,255,0.02); }
+    .test-row:last-child { border-bottom: none; }
+    .test-icon { width: 20px; text-align: center; font-size: 11px; }
+    .test-icon.pass { color: #6bcb77; }
+    .test-icon.fail { color: #ff6b6b; }
+    .test-name { flex: 1; color: #8a8ab0; margin-left: 8px; }
+    .test-val { color: #5a5a7a; font-family: 'SF Mono', Menlo, monospace; font-size: 11px; }
+
+    /* ── Footer ── */
+    footer {
+      position: relative; z-index: 1;
+      padding: 20px 40px; text-align: center;
+      border-top: 1px solid rgba(123,104,238,0.08);
+      font-size: 12px; color: #3a3a5a;
+    }
+    footer a { color: #7b68ee; text-decoration: none; }
   </style>
 </head>
 <body>
+  <div class="bg-orbs">
+    <div class="orb"></div>
+    <div class="orb"></div>
+    <div class="orb"></div>
+  </div>
+
   <header>
-    <h1>Gelectron Demo</h1>
-    <p>HTML + CSS + JavaScript rendering via Gecko / Servo engine</p>
+    <div class="header-top">
+      <div class="logo-orbit">
+        <div class="core"></div>
+        <div class="ring"></div>
+      </div>
+      <div>
+        <h1>Gelectron</h1>
+        <div class="tagline">Electron, but with <code>Gecko</code> instead of Chromium</div>
+      </div>
+    </div>
+    <div class="badges">
+      <span class="badge"><span class="dot green"></span> Servo WebView</span>
+      <span class="badge"><span class="dot blue"></span> Rust + tao/wry</span>
+      <span class="badge"><span class="dot purple"></span> Electron API compat</span>
+    </div>
   </header>
 
   <main>
+    <!-- Counter -->
     <div class="card">
-      <h2>Interactive Counter</h2>
-      <p>Proof that JavaScript runs and DOM updates work.</p>
+      <h2><span class="icon">&#9889;</span> Interactive Counter</h2>
+      <div class="sub">Proof that JavaScript + DOM updates work.</div>
       <div class="counter">
-        <button onclick="dec()">\u2212</button>
+        <button onclick="dec()">&#8722;</button>
         <div class="value" id="count">0</div>
         <button onclick="inc()">+</button>
       </div>
     </div>
 
+    <!-- Clock -->
     <div class="card">
-      <h2>Live Clock</h2>
-      <p>requestAnimationFrame-driven rendering.</p>
-      <div id="clock">--:--:--</div>
-    </div>
-
-    <div class="card">
-      <h2>Canvas 2D</h2>
-      <p>Animated canvas with moving shapes.</p>
-      <div class="canvas-wrap">
-        <canvas id="scene" width="400" height="200"></canvas>
+      <h2><span class="icon">&#128336;</span> Live Clock</h2>
+      <div class="sub">requestAnimationFrame-driven rendering at 60fps.</div>
+      <div class="clock-display">
+        <div class="time" id="clock">--:--:--</div>
+        <div class="date" id="clock-date"></div>
       </div>
     </div>
 
+    <!-- Canvas -->
     <div class="card">
-      <h2>Runtime Info</h2>
-      <p>Environment details from the gelectron shim.</p>
-      <table class="env-table">
-        <tr><td>Platform</td><td id="env-platform"></td></tr>
-        <tr><td>Arch</td><td id="env-arch"></td></tr>
-        <tr><td>Node.js</td><td id="env-node"></td></tr>
-        <tr><td>User Agent</td><td id="env-ua"></td></tr>
-      </table>
+      <h2><span class="icon">&#127912;</span> Canvas 2D</h2>
+      <div class="sub">Animated particles with trails and orbiting shapes.</div>
+      <canvas id="scene" width="600" height="240"></canvas>
     </div>
 
-    <div class="card" style="grid-column: 1 / -1;">
-      <h2>CSS Features</h2>
-      <p>Grid, gradients, border-radius, transitions, flexbox, backdrop styling.</p>
-      <div class="color-bar">
-        <span style="background: #7b68ee;"></span>
-        <span style="background: #00d4ff;"></span>
-        <span style="background: #ff6b9d;"></span>
-        <span style="background: #ffd93d;"></span>
-        <span style="background: #6bcb77;"></span>
-        <span style="background: #ee5a24;"></span>
+    <!-- Runtime Info -->
+    <div class="card">
+      <h2><span class="icon">&#128187;</span> Runtime Info</h2>
+      <div class="sub">Environment details from the Gecko WebView.</div>
+      <div class="info-grid">
+        <div class="info-item"><div class="label">Platform</div><div class="val" id="env-platform"></div></div>
+        <div class="info-item"><div class="label">Engine</div><div class="val">Gecko / Servo</div></div>
+        <div class="info-item"><div class="label">User Agent</div><div class="val" id="env-ua"></div></div>
+        <div class="info-item"><div class="label">Renderer</div><div class="val">WebView (wry)</div></div>
       </div>
     </div>
 
-    <div class="card" style="grid-column: 1 / -1;">
-      <h2>App Module Demo</h2>
-      <p>Interactive demo of the Electron app API — properties, methods, and lifecycle.</p>
+    <!-- Color Spectrum -->
+    <div class="card full">
+      <h2><span class="icon">&#127752;</span> CSS Capabilities</h2>
+      <div class="sub">Gradients, backdrop-filter, transitions, flex, grid, animations.</div>
+      <div class="spectrum">
+        <span style="background:linear-gradient(180deg,#7b68ee,#5a4fcf)" data-label="Indigo"></span>
+        <span style="background:linear-gradient(180deg,#00d4ff,#0099cc)" data-label="Cyan"></span>
+        <span style="background:linear-gradient(180deg,#ff6b9d,#e84393)" data-label="Pink"></span>
+        <span style="background:linear-gradient(180deg,#ffd93d,#f0c419)" data-label="Gold"></span>
+        <span style="background:linear-gradient(180deg,#6bcb77,#4caf50)" data-label="Green"></span>
+        <span style="background:linear-gradient(180deg,#ee5a24,#d63031)" data-label="Orange"></span>
+        <span style="background:linear-gradient(180deg,#a29bfe,#6c5ce7)" data-label="Lavender"></span>
+        <span style="background:linear-gradient(180deg,#fd79a8,#e84393)" data-label="Rose"></span>
+      </div>
+    </div>
+
+    <!-- App Module Demo -->
+    <div class="card full">
+      <h2><span class="icon">&#9881;</span> App Module</h2>
+      <div class="sub">Interactive demo of the Electron app API.</div>
       <div class="btn-grid">
         <button onclick="demoApp('version')">getVersion()</button>
         <button onclick="demoApp('locale')">getLocale()</button>
@@ -301,9 +401,10 @@
       <div class="demo-output" id="app-demo-output"></div>
     </div>
 
-    <div class="card" style="grid-column: 1 / -1;">
-      <h2>Menu Module Demo</h2>
-      <p>Interactive demo of the Electron Menu API — build, set, and inspect native menus.</p>
+    <!-- Menu Module Demo -->
+    <div class="card full">
+      <h2><span class="icon">&#9776;</span> Menu Module</h2>
+      <div class="sub">Native menu building, serialization, and bridge integration.</div>
       <div class="btn-grid">
         <button onclick="demoMenu('build')">Menu.buildFromTemplate()</button>
         <button onclick="demoMenu('set')">Menu.setApplicationMenu()</button>
@@ -317,206 +418,254 @@
       <div class="demo-output" id="menu-demo-output"></div>
     </div>
 
-    <div class="card test-card">
-      <h2>App Module Tests</h2>
-      <p>Automated tests for the Electron app compatibility layer.</p>
-      <div id="app-tests" class="test-results">
-        <p style="color: #8888aa; font-size: 13px;">Waiting for test results...</p>
+    <!-- Tests -->
+    <div class="card full">
+      <h2><span class="icon">&#9989;</span> API Tests</h2>
+      <div class="sub">Automated tests for the Electron compatibility layer.</div>
+      <div id="app-tests">
+        <div style="color:#5a5a7a; font-size:13px; padding:8px 0;">Waiting for test results...</div>
       </div>
     </div>
   </main>
 
-  <footer>Gelectron v0.1.0 &mdash; Electron API compatibility layer powered by Gecko/Servo</footer>
+  <footer>Gelectron v0.1.0 &mdash; Electron compatibility layer powered by Gecko/Servo</footer>
 
   <script>
-    // Counter
+    // ── Counter ──
     var count = 0;
     var countEl = document.getElementById('count');
     function inc() { countEl.textContent = ++count; }
     function dec() { countEl.textContent = --count; }
 
-    // Live clock
+    // ── Clock ──
+    var clockEl = document.getElementById('clock');
+    var clockDateEl = document.getElementById('clock-date');
+    var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     function tick() {
       var now = new Date();
-      var h = String(now.getHours()).padStart(2, '0');
-      var m = String(now.getMinutes()).padStart(2, '0');
-      var s = String(now.getSeconds()).padStart(2, '0');
-      document.getElementById('clock').textContent = h + ':' + m + ':' + s;
+      clockEl.textContent =
+        String(now.getHours()).padStart(2, '0') + ':' +
+        String(now.getMinutes()).padStart(2, '0') + ':' +
+        String(now.getSeconds()).padStart(2, '0');
+      clockDateEl.textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear();
       requestAnimationFrame(tick);
     }
     tick();
 
-    // Canvas animation
+    // ── Canvas ──
     var canvas = document.getElementById('scene');
     var ctx = canvas.getContext('2d');
+    var W, H;
+    function resize() { W = canvas.width = canvas.offsetWidth * 2; H = canvas.height = canvas.offsetHeight * 2; }
+    resize();
+    window.addEventListener('resize', resize);
+
+    var particles = [];
+    for (var i = 0; i < 40; i++) {
+      particles.push({
+        x: Math.random() * 600, y: Math.random() * 240,
+        vx: (Math.random() - 0.5) * 1.2, vy: (Math.random() - 0.5) * 1.2,
+        r: Math.random() * 3 + 1,
+        hue: Math.random() * 60 + 220,
+      });
+    }
     var t = 0;
-    function drawFrame() {
-      t += 0.02;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    function drawCanvas() {
+      t += 0.008;
+      ctx.clearRect(0, 0, W, H);
 
-      // bouncing ball
-      var bx = 50 + Math.sin(t) * 150;
-      var by = 100 + Math.cos(t * 1.3) * 60;
-      ctx.beginPath();
-      ctx.arc(bx, by, 18, 0, Math.PI * 2);
-      ctx.fillStyle = '#7b68ee';
-      ctx.fill();
+      // Draw connections
+      for (var i = 0; i < particles.length; i++) {
+        for (var j = i + 1; j < particles.length; j++) {
+          var dx = particles[i].x - particles[j].x;
+          var dy = particles[i].y - particles[j].y;
+          var dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 100) {
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.strokeStyle = 'rgba(123,104,238,' + (0.15 * (1 - dist / 100)) + ')';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+      }
 
-      // second ball
-      var bx2 = 200 + Math.cos(t * 0.7) * 120;
-      var by2 = 80 + Math.sin(t * 1.1) * 70;
+      // Draw particles
+      for (var i = 0; i < particles.length; i++) {
+        var p = particles[i];
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < 0 || p.x > W / 2) p.vx *= -1;
+        if (p.y < 0 || p.y > H / 2) p.vy *= -1;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = 'hsla(' + p.hue + ', 80%, 70%, 0.8)';
+        ctx.fill();
+
+        // Glow
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r * 3, 0, Math.PI * 2);
+        ctx.fillStyle = 'hsla(' + p.hue + ', 80%, 70%, 0.08)';
+        ctx.fill();
+      }
+
+      // Orbiting shape
+      var cx = W / 4, cy = H / 4;
+      var ox = cx + Math.cos(t * 0.8) * 80;
+      var oy = cy + Math.sin(t * 0.8) * 40;
       ctx.beginPath();
-      ctx.arc(bx2, by2, 14, 0, Math.PI * 2);
+      ctx.arc(ox, oy, 6, 0, Math.PI * 2);
       ctx.fillStyle = '#00d4ff';
       ctx.fill();
-
-      // trailing line
       ctx.beginPath();
-      ctx.moveTo(0, 100 + Math.sin(t) * 40);
-      for (var x = 0; x < canvas.width; x += 4) {
-        ctx.lineTo(x, 100 + Math.sin(t + x * 0.03) * 40);
+      ctx.arc(ox, oy, 16, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,212,255,0.1)';
+      ctx.fill();
+
+      // Trailing wave
+      ctx.beginPath();
+      for (var x = 0; x < W / 2; x += 2) {
+        var y = cy + Math.sin(t + x * 0.02) * 20 + Math.sin(t * 1.5 + x * 0.01) * 10;
+        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
-      ctx.strokeStyle = 'rgba(123,104,238,0.3)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(123,104,238,0.25)';
+      ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      requestAnimationFrame(drawFrame);
+      requestAnimationFrame(drawCanvas);
     }
-    drawFrame();
+    drawCanvas();
 
-    // Runtime info
+    // ── Runtime info ──
     document.getElementById('env-platform').textContent = navigator.platform || 'unknown';
-    document.getElementById('env-arch').textContent = 'unknown (browser sandbox)';
-    document.getElementById('env-node').textContent = 'N/A in renderer';
     document.getElementById('env-ua').textContent = navigator.userAgent;
 
-    // App module interactive demo
+    // ── App module demo ──
     function demoApp(action) {
       var out = document.getElementById('app-demo-output');
       out.style.display = 'block';
       var electron = window.electron;
       if (!electron || !electron.app) {
-        out.textContent = 'Error: window.electron.app not available (renderer-only mode)';
+        out.textContent = 'Error: window.electron.app not available';
         return;
       }
       var app = electron.app;
-      var result = '';
+      var r = '';
       switch (action) {
         case 'version':
-          result = 'app.getVersion() → ' + app.getVersion() +
-                   '\napp.version (property) → ' + app.version;
+          r = 'app.getVersion()  \u2192 ' + app.getVersion() +
+              '\napp.version       \u2192 ' + app.version;
           break;
         case 'locale':
-          result = 'app.getLocale() → ' + app.getLocale() +
-                   '\napp.locale (property) → ' + app.locale;
+          r = 'app.getLocale()   \u2192 ' + app.getLocale() +
+              '\napp.locale         \u2192 ' + app.locale;
           break;
         case 'userAgent':
-          result = 'app.getUserAgent() → ' + app.getUserAgent() +
-                   '\napp.userAgent (property) → ' + app.userAgent;
+          r = 'app.getUserAgent() \u2192 ' + app.getUserAgent();
           break;
         case 'setUserAgent':
           app.setUserAgent('GelectronDemo/2.0');
-          result = 'app.setUserAgent("GelectronDemo/2.0")' +
-                   '\napp.getUserAgent() → ' + app.getUserAgent();
+          r = 'app.setUserAgent("GelectronDemo/2.0")' +
+              '\napp.getUserAgent() \u2192 ' + app.getUserAgent();
           app.setUserAgent(null);
-          result += '\napp.setUserAgent(null) reset → ' + app.getUserAgent();
+          r += '\n\napp.setUserAgent(null) // reset' +
+               '\napp.getUserAgent() \u2192 ' + app.getUserAgent();
           break;
         case 'appPath':
-          result = 'app.getAppPath() → ' + app.getAppPath() +
-                   '\napp.appPath (property) → ' + app.appPath;
+          r = 'app.getAppPath()  \u2192 ' + app.getAppPath() +
+              '\napp.appPath        \u2192 ' + app.appPath;
           break;
         case 'isReady':
-          result = 'app.isReady (property) → ' + app.isReady +
-                   '\napp.isReady() method → ' + app.isReady() +
-                   '\napp.whenReady() → [Promise resolved]';
-          app.whenReady().then(function() {
-            out.textContent += '\n→ whenReady promise resolved!';
-          });
+          r = 'app.isReady (prop) \u2192 ' + app.isReady +
+              '\napp.isReady()      \u2192 ' + app.isReady() +
+              '\napp.whenReady()    \u2192 [Promise]';
+          app.whenReady().then(function() { out.textContent += '\n\u2192 whenReady resolved!'; });
           break;
         case 'badge':
           app.setBadgeCount(7);
-          result = 'app.setBadgeCount(7)' +
-                   '\napp.getBadgeCount() → ' + app.getBadgeCount();
+          r = 'app.setBadgeCount(7)' +
+              '\napp.getBadgeCount() \u2192 ' + app.getBadgeCount();
           app.setBadgeCount(0);
-          result += '\napp.setBadgeCount(0) → ' + app.getBadgeCount();
+          r += '\n\napp.setBadgeCount(0)' +
+               '\napp.getBadgeCount() \u2192 ' + app.getBadgeCount();
           break;
         case 'metrics':
           var m = app.getAppMetrics();
-          result = 'app.getAppMetrics() → [' + m.length + ' entries]' +
-                   '\n  pid: ' + m[0].pid +
-                   '\n  type: ' + m[0].type +
-                   '\n  memory: ' + JSON.stringify(m[0].memory) +
-                   '\n  sandboxed: ' + m[0].sandboxed;
+          r = 'app.getAppMetrics() \u2192 [' + m.length + ' entry]' +
+              '\n  pid: ' + m[0].pid +
+              '\n  type: ' + m[0].type +
+              '\n  memory: ' + JSON.stringify(m[0].memory) +
+              '\n  sandboxed: ' + m[0].sandboxed;
           break;
         case 'gpu':
           app.getGPUInfo('basic').then(function(info) {
-            out.textContent = 'app.getGPUInfo("basic") →\n' +
+            out.textContent = 'app.getGPUInfo("basic") \u2192\n' +
               '  GPUActive: ' + info.GPUActive +
               '\n  gpuDevice: ' + JSON.stringify(info.gpuDevice, null, 2);
           });
-          result = 'Loading GPU info...';
+          r = 'Loading...';
           break;
         case 'gpuFeatures':
           var f = app.getGPUFeatureStatus();
-          var lines = ['app.getGPUFeatureStatus() →'];
+          var lines = ['app.getGPUFeatureStatus() \u2192'];
           for (var k in f) lines.push('  ' + k + ': ' + f[k]);
-          result = lines.join('\n');
+          r = lines.join('\n');
           break;
         case 'loginItem':
           var s = app.getLoginItemSettings();
-          result = 'app.getLoginItemSettings() →\n' +
-            '  openAtLogin: ' + s.openAtLogin +
-            '\n  openAsHidden: ' + s.openAsHidden +
-            '\n  launchAtLogin: ' + s.launchAtLogin +
-            '\n  launchItems: ' + JSON.stringify(s.launchItems);
+          r = 'app.getLoginItemSettings() \u2192\n' +
+              '  openAtLogin: ' + s.openAtLogin +
+              '\n  openAsHidden: ' + s.openAsHidden +
+              '\n  launchAtLogin: ' + s.launchAtLogin +
+              '\n  launchItems: ' + JSON.stringify(s.launchItems);
           break;
         case 'aboutPanel':
           app.setAboutPanelOptions({ applicationName: 'Gelectron Demo', copyright: 'MIT' });
-          var o = app.getAboutPanelOptions();
-          result = 'app.setAboutPanelOptions({ applicationName: "Gelectron Demo", copyright: "MIT" })' +
-                   '\napp.getAboutPanelOptions() →\n' + JSON.stringify(o, null, 2);
+          r = 'app.setAboutPanelOptions({...})' +
+              '\napp.getAboutPanelOptions() \u2192\n' + JSON.stringify(app.getAboutPanelOptions(), null, 2);
           break;
         case 'secureKeyboard':
           app.setSecureKeyboardEntryEnabled(true);
-          result = 'app.setSecureKeyboardEntryEnabled(true)' +
-                   '\napp.isSecureKeyboardEntryEnabled() → ' + app.isSecureKeyboardEntryEnabled();
+          r = 'app.setSecureKeyboardEntryEnabled(true)' +
+              '\napp.isSecureKeyboardEntryEnabled() \u2192 ' + app.isSecureKeyboardEntryEnabled();
           app.setSecureKeyboardEntryEnabled(false);
-          result += '\napp.setSecureKeyboardEntryEnabled(false)' +
-                    '\napp.isSecureKeyboardEntryEnabled() → ' + app.isSecureKeyboardEntryEnabled();
+          r += '\n\napp.setSecureKeyboardEntryEnabled(false)' +
+               '\napp.isSecureKeyboardEntryEnabled() \u2192 ' + app.isSecureKeyboardEntryEnabled();
           break;
         case 'name':
           var old = app.name;
           app.name = 'Gelectron Demo App';
-          result = 'app.name = "Gelectron Demo App"' +
-                   '\napp.name → ' + app.name +
-                   '\napp.getName() → ' + app.getName();
+          r = 'app.name = "Gelectron Demo App"' +
+              '\napp.name     \u2192 ' + app.name +
+              '\napp.getName() \u2192 ' + app.getName();
           app.name = old;
-          result += '\n(app.name restored to "' + old + '")';
+          r += '\n\n// restored to "' + old + '"';
           break;
         case 'paths':
-          result = 'app.getPath("home") → ' + app.getPath('home') +
-                   '\napp.getPath("userData") → ' + app.getPath('userData') +
-                   '\napp.getPath("temp") → ' + app.getPath('temp') +
-                   '\napp.getPath("desktop") → ' + app.getPath('desktop') +
-                   '\napp.getPath("documents") → ' + app.getPath('documents') +
-                   '\napp.getPath("downloads") → ' + app.getPath('downloads') +
-                   '\napp.getPath("logs") → ' + app.getPath('logs');
+          r = 'app.getPath("home")      \u2192 ' + app.getPath('home') +
+              '\napp.getPath("userData")   \u2192 ' + app.getPath('userData') +
+              '\napp.getPath("temp")       \u2192 ' + app.getPath('temp') +
+              '\napp.getPath("desktop")    \u2192 ' + app.getPath('desktop') +
+              '\napp.getPath("documents")  \u2192 ' + app.getPath('documents') +
+              '\napp.getPath("downloads")  \u2192 ' + app.getPath('downloads') +
+              '\napp.getPath("logs")       \u2192 ' + app.getPath('logs');
           break;
         case 'dock':
           if (app.dock) {
-            var id = app.dock.bounce();
-            result = 'app.dock.bounce() → ' + id +
-                     '\napp.dock.isVisible() → ' + app.dock.isVisible() +
-                     '\napp.dock.getBadge() → "' + app.dock.getBadge() + '"';
+            r = 'app.dock.bounce()       \u2192 ' + app.dock.bounce() +
+                '\napp.dock.isVisible()    \u2192 ' + app.dock.isVisible() +
+                '\napp.dock.getBadge()     \u2192 "' + app.dock.getBadge() + '"';
           } else {
-            result = 'app.dock → null (not macOS)';
+            r = 'app.dock \u2192 null (not macOS)';
           }
           break;
       }
-      out.textContent = result;
+      out.textContent = r;
     }
 
-    // Menu module interactive demo
+    // ── Menu module demo ──
     function demoMenu(action) {
       var out = document.getElementById('menu-demo-output');
       out.style.display = 'block';
@@ -527,7 +676,7 @@
       }
       var Menu = electron.Menu;
       var MenuItem = electron.MenuItem;
-      var result = '';
+      var r = '';
       switch (action) {
         case 'build': {
           var menu = Menu.buildFromTemplate([
@@ -546,13 +695,12 @@
               { label: 'About Gelectron' },
             ]},
           ]);
-          result = 'Menu.buildFromTemplate([...]) → Menu {\n' +
-            '  items.length: ' + menu.items.length + '\n' +
-            '  items[0].label: "' + menu.items[0].label + '"\n' +
-            '  items[0].submenu.items.length: ' + menu.items[0].submenu.items.length + '\n' +
-            '  items[1].label: "' + menu.items[1].label + '"\n' +
-            '  items[2].label: "' + menu.items[2].label + '"\n' +
-            '}';
+          r = 'Menu.buildFromTemplate([...]) \u2192 Menu {\n' +
+              '  items.length: ' + menu.items.length + '\n' +
+              '  [0] "' + menu.items[0].label + '" (' + menu.items[0].submenu.items.length + ' items)\n' +
+              '  [1] "' + menu.items[1].label + '" (' + menu.items[1].submenu.items.length + ' items)\n' +
+              '  [2] "' + menu.items[2].label + '" (' + menu.items[2].submenu.items.length + ' items)\n' +
+              '}';
           break;
         }
         case 'set': {
@@ -568,21 +716,18 @@
             ]},
           ]);
           Menu.setApplicationMenu(menu);
-          var current = Menu.getApplicationMenu();
-          result = 'Menu.setApplicationMenu(menu) → sent to native bridge' +
-                   '\nMenu.getApplicationMenu() → ' + (current ? 'Menu { items: ' + current.items.length + ' }' : 'null');
+          r = 'Menu.setApplicationMenu(menu) \u2192 sent to native bridge (muda)\n' +
+              'Menu.getApplicationMenu()     \u2192 Menu { items: ' + menu.items.length + ' }';
           break;
         }
         case 'get': {
-          var current = Menu.getApplicationMenu();
-          if (current) {
-            var labels = current.items.map(function(i) { return i.label; });
-            result = 'Menu.getApplicationMenu() → Menu {\n' +
-              '  items: [' + labels.join(', ') + ']\n' +
-              '  items.length: ' + current.items.length + '\n' +
-              '}';
+          var cur = Menu.getApplicationMenu();
+          if (cur) {
+            r = 'Menu.getApplicationMenu() \u2192 Menu {\n' +
+                '  items: [' + cur.items.map(function(i) { return '" + i.label + '"'; }).join(', ') + ']\n' +
+                '}';
           } else {
-            result = 'Menu.getApplicationMenu() → null\n(No application menu set yet. Click "Menu.setApplicationMenu()" first.)';
+            r = 'Menu.getApplicationMenu() \u2192 null\n(set a menu first)';
           }
           break;
         }
@@ -596,27 +741,21 @@
               { id: 'copy-item', label: 'Copy' },
             ]},
           ]);
-          var item = menu.getMenuItemById('new-file');
-          var item2 = menu.getMenuItemById('copy-item');
-          var missing = menu.getMenuItemById('nonexistent');
-          result = 'menu.getMenuItemById("new-file") →\n' +
-            '  label: "' + (item ? item.label : 'null') + '"\n' +
-            '  id: "' + (item ? item.id : 'null') + '"' +
-            '\nmenu.getMenuItemById("copy-item") →\n' +
-            '  label: "' + (item2 ? item2.label : 'null') + '"' +
-            '\nmenu.getMenuItemById("nonexistent") → ' + (missing ? 'found' : 'null');
+          var a = menu.getMenuItemById('new-file');
+          var b = menu.getMenuItemById('copy-item');
+          var c = menu.getMenuItemById('nonexistent');
+          r = 'menu.getMenuItemById("new-file") \u2192 "' + (a ? a.label : 'null') + '" (id=' + (a ? a.id : 'null') + ')' +
+              '\nmenu.getMenuItemById("copy-item") \u2192 "' + (b ? b.label : 'null') + '"' +
+              '\nmenu.getMenuItemById("nope")      \u2192 ' + (c ? 'found' : 'null');
           break;
         }
         case 'append': {
-          var menu = Menu.buildFromTemplate([
-            { label: 'Existing Item' },
-          ]);
-          result = 'Before append: items.length = ' + menu.items.length;
-          menu.append(new MenuItem({ label: 'Appended Item', type: 'normal' }));
-          result += '\nmenu.append(new MenuItem({ label: "Appended Item" }))' +
-                    '\nAfter append: items.length = ' + menu.items.length +
-                    '\n  items[0].label: "' + menu.items[0].label + '"' +
-                    '\n  items[1].label: "' + menu.items[1].label + '"';
+          var menu = Menu.buildFromTemplate([{ label: 'Existing' }]);
+          r = 'Before: items.length = ' + menu.items.length;
+          menu.append(new MenuItem({ label: 'Appended' }));
+          r += '\nmenu.append(new MenuItem({ label: "Appended" }))' +
+               '\nAfter:  items.length = ' + menu.items.length +
+               '\n  [' + menu.items.map(function(i) { return i.label; }).join(', ') + ']';
           break;
         }
         case 'serialize': {
@@ -628,8 +767,7 @@
             ]},
             { label: 'Edit', enabled: false },
           ]);
-          var s = menu._serialize();
-          result = 'menu._serialize() →\n' + JSON.stringify(s, null, 2);
+          r = 'menu._serialize() \u2192\n' + JSON.stringify(menu._serialize(), null, 2);
           break;
         }
         case 'count': {
@@ -639,11 +777,10 @@
             { label: 'View' },
             { label: 'Help' },
           ]);
-          result = 'Menu.buildFromTemplate(4 top-level items)' +
-                   '\nmenu.items.length → ' + menu.items.length +
-                   '\nmenu.items.map(i => i.label) → [' +
-                   menu.items.map(function(i) { return '"' + i.label + '"'; }).join(', ') + ']' +
-                   '\nmenu.items[0].submenu.items.length → ' + menu.items[0].submenu.items.length;
+          r = 'menu.items.length \u2192 ' + menu.items.length +
+              '\nmenu.items.map(i => i.label) \u2192 [' +
+              menu.items.map(function(i) { return '"' + i.label + '"'; }).join(', ') + ']' +
+              '\nmenu.items[0].submenu.items.length \u2192 ' + menu.items[0].submenu.items.length;
           break;
         }
         case 'submenu': {
@@ -661,44 +798,42 @@
             ]},
           ]);
           var fmt = menu.items[0];
-          result = 'Menu with nested submenus:' +
-                   '\nmenu.items[0].label → "' + fmt.label + '"' +
-                   '\nmenu.items[0].submenu.items.length → ' + fmt.submenu.items.length +
-                   '\nmenu.items[0].submenu.items[0].label → "' + fmt.submenu.items[0].label + '"' +
-                   '\nmenu.items[0].submenu.items[0].submenu.items.length → ' +
-                   fmt.submenu.items[0].submenu.items.length +
-                   '\n  nested items: ' +
-                   fmt.submenu.items[0].submenu.items.map(function(i) {
-                     return '"' + i.label + '"';
-                   }).join(', ');
+          r = 'Nested submenus:' +
+              '\nmenu.items[0].label \u2192 "' + fmt.label + '"' +
+              '\n  submenu.items.length \u2192 ' + fmt.submenu.items.length +
+              '\n  [0] "' + fmt.submenu.items[0].label + '" (submenu: ' +
+              fmt.submenu.items[0].submenu.items.length + ' items)' +
+              '\n    ' + fmt.submenu.items[0].submenu.items.map(function(i) {
+                return '"' + i.label + '"';
+              }).join(', ');
           break;
         }
       }
-      out.textContent = result;
+      out.textContent = r;
     }
 
-    // App test results renderer
+    // ── Test results renderer ──
     function renderAppTests() {
       var results = window.__appTestResults;
       if (!results) return;
       var el = document.getElementById('app-tests');
-      var html = '';
       var pass = 0, fail = 0;
       for (var i = 0; i < results.length; i++) {
-        var r = results[i];
-        var cls = r.status === 'PASS' ? 'test-pass' : 'test-fail';
-        var icon = r.status === 'PASS' ? '\u2713' : '\u2717';
-        if (r.status === 'PASS') pass++; else fail++;
-        html += '<div class="test-row">' +
-          '<span class="' + cls + '">' + icon + '</span>' +
-          '<span class="test-name">' + r.name + '</span>' +
-          '<span class="test-value">' + r.value + '</span>' +
-          '</div>';
+        if (results[i].status === 'PASS') pass++; else fail++;
       }
-      html = '<div style="margin-bottom: 12px; font-size: 14px; font-weight: 600;">' +
-        '<span class="test-pass">' + pass + ' passed</span> &middot; ' +
-        '<span class="test-fail">' + fail + ' failed</span> &middot; ' +
-        (pass + fail) + ' total</div>' + html;
+      var html = '<div class="test-header">' +
+        '<span class="test-pill pass">' + pass + ' passed</span>' +
+        '<span class="test-pill fail">' + fail + ' failed</span>' +
+        '<span style="color:#5a5a7a; font-size:12px;">' + (pass + fail) + ' total</span></div>';
+      for (var i = 0; i < results.length; i++) {
+        var r = results[i];
+        var cls = r.status === 'PASS' ? 'pass' : 'fail';
+        var icon = r.status === 'PASS' ? '\u2713' : '\u2717';
+        html += '<div class="test-row">' +
+          '<span class="test-icon ' + cls + '">' + icon + '</span>' +
+          '<span class="test-name">' + r.name + '</span>' +
+          '<span class="test-val">' + r.value + '</span></div>';
+      }
       el.innerHTML = html;
     }
   </script>
