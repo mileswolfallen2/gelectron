@@ -1,56 +1,131 @@
 # Gelectron — Electron API Compatibility Status
 
-## FULL (2)
-| Module        | Notes |
-|---------------|-------|
-| app           | All methods/properties/events, quit lifecycle, dock, badge, GPU, about panel, secure keyboard entry, window tracking |
-| ipcMain       | handle/handleOnce/on/once/removeHandler, full EventEmitter |
+> Every Electron module tracked. Status: **full** / **partial** / **stub** / **missing**
+>
+> **full** = API surface complete, behavior matches Electron for common use cases
+> **partial** = Core methods work, some methods are no-ops or return defaults
+> **stub** = API surface exists but does nothing real
+> **missing** = Not implemented at all
 
-## PARTIAL (14)
-| Module              | What works                                | What's missing                                    |
-|---------------------|-------------------------------------------|---------------------------------------------------|
-| Menu / MenuItem     | buildFromTemplate/append/insert/getMenuItemById, native setApplicationMenu via muda, popup via bridge, _serialize, submenu nesting | Click events from native menu, role-based predefined items |
-| BrowserWindow       | create/show/hide/focus/min/max/close/destroy/setTitle/setSize/loadURL/loadFile | DevTools actually opening, navigation (back/forward), capturePage, print, printToPDF, setPosition, setBounds |
-| WebContents         | loadURL/loadFile/send/executeJavaScript/reload, session stub | Real session, navigation history, DevTools CDP, zoom actually applied |
-| ipcRenderer         | invoke/send/sendSync/on/once/removeListener | Bridge not always wired, sendSync returns undefined |
-| dialog              | showOpenDialog/showSaveDialog/showMessageBox/showErrorBox | Native dialogs not wired (Rust has no dialog commands) |
-| shell               | openExternal/openPath (Node mode)         | moveItemToTrash deletes permanently, shortcut stubs |
-| Notification        | show via browser Notification API          | No native OS notification integration |
-| nativeImage         | createFromPath/Buffer/DataURL, toDataURL, getSize | resize/crop don't transform pixels, toPNG/toJPEG bugs |
-| contextBridge       | exposeInMainWorld with deep freeze          | No real world isolation, no proxy serialization |
-| webContents (utils) | getAllWebContents/getFocusedWebContents    | Minimal                                           |
-| net                 | fetch delegates to globalThis.fetch        | No net.request(), no ClientRequest API             |
-| process (polyfill)  | pid/argv/env/platform/versions/cwd/nextTick | memoryUsage/cpuUsage/uptime/kill missing          |
-| contextIsolation    | webPreferences.contextIsolation stored      | No actual V8 isolate separation                   |
+---
 
-## STUB (12)
-| Module           | Implementation                                              |
-|------------------|-------------------------------------------------------------|
-| Tray             | API surface present, no native system tray                  |
-| safeStorage      | base64 encoding, not real encryption                        |
-| autoUpdater      | API surface for electron-updater compat, no actual updates  |
-| session          | defaultSession + fromPartition stubs, all no-ops            |
-| clipboard        | readText/writeText no-ops                                   |
-| screen           | Hardcoded 1920x1080 primary display                         |
-| systemPreferences| Hardcoded dark mode / accent color                          |
-| powerMonitor     | getSystemIdleState returns 'active', no real monitoring     |
-| globalShortcut   | register always returns true, does nothing                  |
-| updater          | Covered by autoUpdater stub                                 |
+## Browser (Main Process) Modules
 
-## MISSING (9)
-| Module           | Notes                                    |
-|------------------|------------------------------------------|
-| nativeTheme      | No theme detection                       |
-| netLog           | No network log capture                   |
-| protocol         | No custom protocol registration          |
-| crashReporter    | No crash reporting                       |
-| desktopCapturer  | No screen/window capture sources         |
-| pushNotifications| No push notification handling            |
-| utilityProcess   | No utility/forked process                |
-| ShareMenu        | No share menu (macOS)                    |
-| TouchBar         | No Touch Bar (macOS)                     |
+| # | Module | File | webview-bundle | index.js | Status | Notes |
+|---|--------|------|----------------|----------|--------|-------|
+| 1 | app | YES | YES | YES | **full** | All methods, properties, events, quit lifecycle, dock, badge, GPU, about panel, secure keyboard, window tracking |
+| 2 | autoUpdater | YES | YES | YES | **stub** | API surface for electron-updater compat, no actual updates |
+| 3 | BaseWindow | NO | NO | NO | **missing** | Parent class for BrowserWindow, not implemented |
+| 4 | BrowserView | NO | NO | NO | **missing** | Deprecated in favor of WebContentsView |
+| 5 | BrowserWindow | YES | YES | YES | **partial** | create/show/hide/focus/min/max/close/destroy/setTitle/setSize/loadURL/loadFile. Missing: DevTools, navigation, capturePage, print, printToPDF |
+| 6 | clipboard | NO | inline | YES | **stub** | readText/writeText no-ops, missing readHTML/writeHTML/readBookmark etc. |
+| 7 | contentTracing | NO | NO | NO | **missing** | Tracing/recording profiling data |
+| 8 | crashReporter | NO | NO | NO | **missing** | Crash upload to server |
+| 9 | desktopCapturer | NO | NO | NO | **missing** | Screen/window capture source enumeration |
+| 10 | dialog | YES | YES | YES | **partial** | showOpenDialog/showSaveDialog/showMessageBox/showErrorBox. Native dialogs not wired |
+| 11 | globalShortcut | NO | inline | YES | **stub** | register() always returns true, does nothing |
+| 12 | ipcMain | YES | YES | YES | **full** | handle/handleOnce/on/once/removeHandler, full EventEmitter |
+| 13 | ImageView | NO | NO | NO | **missing** | New in Electron 33+, image display view |
+| 14 | inAppPurchase | NO | NO | NO | **missing** | macOS App Store in-app purchases |
+| 15 | Menu | YES | YES | YES | **partial** | buildFromTemplate/append/insert/getMenuItemById, native setApplicationMenu via muda, _serialize. Missing: click events from native menu, role-based predefined items |
+| 16 | MenuItem | YES | YES | YES | **partial** | All properties present (id/label/type/role/accelerator/enabled/visible/checked/submenu/click). Missing: role auto-behavior |
+| 17 | MessageChannelMain | NO | NO | NO | **missing** | MessagePort-based IPC between main/renderer |
+| 18 | nativeImage | YES | YES | YES | **partial** | createFromPath/Buffer/DataURL, toDataURL, getSize. Missing: resize/crop pixel transform, proper toPNG/toJPEG |
+| 19 | nativeTheme | NO | NO | NO | **missing** | Dark mode detection, shouldUseDarkColors, themeSource |
+| 20 | net | NO | inline | YES | **partial** | fetch delegates to globalThis.fetch. Missing: net.request(), ClientRequest API |
+| 21 | netLog | NO | NO | NO | **missing** | Network log capture |
+| 22 | Notification | YES | YES | YES | **partial** | API surface complete, show via browser Notification API if available. No native OS integration |
+| 23 | powerMonitor | NO | inline | YES | **stub** | getSystemIdleState returns 'active', no real monitoring |
+| 24 | powerSaveBlocker | NO | NO | NO | **missing** | Prevent system sleep |
+| 25 | protocol | NO | inline (session) | NO | **missing** | Custom protocol registration (standalone module). Session stubs exist |
+| 26 | pushNotifications | NO | NO | NO | **missing** | macOS push notification registration |
+| 27 | safeStorage | YES | YES | YES | **stub** | Base64 encoding, not real encryption |
+| 28 | screen | NO | inline | YES | **stub** | Hardcoded 1920x1080 primary display |
+| 29 | ServiceWorkerMain | NO | NO | NO | **missing** | Service worker management in main process |
+| 30 | session | NO | inline | YES | **stub** | defaultSession + fromPartition stubs, all no-ops |
+| 31 | sharedTexture | NO | NO | NO | **missing** | Shared texture between processes |
+| 32 | ShareMenu | NO | NO | NO | **missing** | macOS share sheet |
+| 33 | shell | YES | YES | YES | **partial** | openExternal/openPath work in Node.js mode. moveItemToTrash deletes permanently, shortcut stubs |
+| 34 | systemPreferences | NO | inline | YES | **stub** | Hardcoded dark mode / accent color |
+| 35 | TouchBar | NO | NO | NO | **missing** | macOS Touch Bar. Sub-classes: TouchBarButton, TouchBarColorPicker, TouchBarGroup, TouchBarLabel, TouchBarOtherItemsProxy, TouchBarPopover, TouchBarScrubber, TouchBarSegmentedControl, TouchBarSlider, TouchBarSpacer |
+| 36 | Tray | YES | YES | YES | **stub** | API surface present, no native system tray |
+| 37 | utilityProcess | NO | NO | NO | **missing** | Fork utility child processes |
+| 38 | View | NO | NO | NO | **missing** | Base View class for embedding |
+| 39 | webContents | YES | YES | YES | **partial** | loadURL/loadFile/send/executeJavaScript/reload, session stub. Missing: navigation history, DevTools CDP, zoom, print, capturePage |
+| 40 | WebContentsView | NO | NO | NO | **missing** | View-based content embedding |
+| 41 | webFrameMain | NO | NO | NO | **missing** | Main-process webFrame for frame control |
 
-## Missing from existing modules
-- BrowserWindow: webContents.debugger, setOpacity/getOpacity, setProgressBar actual display
-- app: render-process-gone, child-process-gone events (require real process monitoring)
-- Menu: native menu click events not wired back to JS, no role-based predefined items (copy/paste/undo etc.)
+## Renderer Process Modules
+
+| # | Module | File | webview-bundle | index.js | Status | Notes |
+|---|--------|------|----------------|----------|--------|-------|
+| 42 | clipboard (renderer) | NO | inline | YES | **stub** | Same as main process stub |
+| 43 | contextBridge | YES | YES | YES | **partial** | exposeInMainWorld with deep freeze. No real world isolation |
+| 44 | crashReporter (renderer) | NO | NO | NO | **missing** | Renderer-side crash reporter |
+| 45 | ipcRenderer | YES | NO (inline) | NO (via require hook) | **partial** | invoke/send/sendSync/on/once/removeListener. Bridge not always wired |
+| 46 | sharedTexture (renderer) | NO | NO | NO | **missing** | Renderer-side shared texture |
+| 47 | webFrame | NO | NO | NO | **missing** | setZoomFactor/setZoomLevel/insertCSS/executeJavaScript in frame context |
+| 48 | webUtils | NO | NO | NO | **missing** | Renderer-side utilities (process |
+
+## Common Modules (Both Processes)
+
+| # | Module | File | webview-bundle | index.js | Status | Notes |
+|---|--------|------|----------------|----------|--------|-------|
+| 49 | nativeImage | YES | YES | YES | **partial** | createFromPath/Buffer/DataURL, toDataURL, getSize. Missing: resize/crop transform |
+| 50 | shell | YES | YES | YES | **partial** | openExternal/openPath in Node mode |
+
+## Deprecated / Internal
+
+| # | Module | Status | Notes |
+|---|--------|--------|-------|
+| 51 | BrowserView | **missing** | Deprecated, replaced by WebContentsView |
+| 52 | remote | **missing** | Removed in Electron 14+ |
+| 53 | webviewTag | **missing** | Deprecated, replaced by BrowserView/WebContentsView |
+| 54 | process (polyfill) | **partial** | WebView mode polyfill: pid/argv/env/platform/versions/cwd/nextTick. Missing: memoryUsage/cpuUsage/uptime/kill |
+| 55 | contextIsolation | **stub** | webPreferences.contextIsolation stored but no actual V8 isolate separation |
+
+## Additional APIs from Electron Docs
+
+| # | API | Status | Notes |
+|---|-----|--------|-------|
+| 56 | navigation-history | **missing** | Navigation history API |
+| 57 | parent-port | **missing** | UtilityProcess communication port |
+| 58 | web-request | **missing** | Intercept/modify HTTP requests |
+| 59 | web-socket | **missing** | WebSocket server |
+| 60 | window-open | **missing** | window.open() handling |
+| 61 | local-ai-handler | **missing** | Local AI model handler (new) |
+
+---
+
+## Summary
+
+| Status | Count | Modules |
+|--------|-------|---------|
+| **full** | 2 | app, ipcMain |
+| **partial** | 12 | BrowserWindow, Menu, MenuItem, dialog, shell, Notification, nativeImage, contextBridge, webContents, ipcRenderer, net, process |
+| **stub** | 9 | Tray, safeStorage, autoUpdater, session, clipboard, screen, systemPreferences, powerMonitor, globalShortcut |
+| **missing** | 38 | BaseWindow, BrowserView, contentTracing, crashReporter, desktopCapturer, ImageView, inAppPurchase, MessageChannelMain, nativeTheme, netLog, powerSaveBlocker, protocol, pushNotifications, ServiceWorkerMain, sharedTexture, ShareMenu, TouchBar (+10 sub-classes), utilityProcess, View, WebContentsView, webFrameMain, webFrame, webUtils, crashReporter (renderer), sharedTexture (renderer), remote, webviewTag, navigation-history, parent-port, web-request, web-socket, window-open |
+| **Total** | **60** | | |
+
+## Rust Bridge (main.rs ToRust commands)
+
+These commands are implemented on the Rust side and can be triggered from the WebView:
+
+| Command | Status | Notes |
+|---------|--------|-------|
+| create-window | YES | Creates a new tao+wry window |
+| destroy-window | YES | Removes window from state |
+| load-url | YES | Navigates webview to URL |
+| load-file | YES | Rebuilds WebView with file:// URL |
+| set-title | YES | Updates window title |
+| set-size | YES | Updates window inner size |
+| show / hide / focus | YES | Window visibility |
+| minimize / maximize | YES | Window state |
+| close | YES | Closes window |
+| eval-js | YES | Execute JavaScript in webview |
+| ipc-message | YES | Forward IPC to renderer |
+| quit | YES | Exit event loop |
+| relaunch | YES | Spawn new process, exit |
+| set-application-menu | YES | Set native menu via muda (macOS: init_for_nsapp) |
+| popup-menu | YES | Show context menu via muda |
+| close-popup-menu | YES | Close context menu |
