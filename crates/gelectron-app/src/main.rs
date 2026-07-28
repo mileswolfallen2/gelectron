@@ -54,6 +54,27 @@ enum ToRust {
     EvalJs { id: u32, script: String },
     #[serde(rename = "quit")]
     Quit,
+    #[serde(rename = "relaunch")]
+    Relaunch {
+        #[serde(default)]
+        exec_path: Option<String>,
+        #[serde(default)]
+        args: Option<Vec<String>>,
+    },
+    #[serde(rename = "set-application-menu")]
+    SetApplicationMenu {
+        menu: serde_json::Value,
+    },
+    #[serde(rename = "popup-menu")]
+    PopupMenu {
+        menu: serde_json::Value,
+        #[serde(default)]
+        x: Option<f64>,
+        #[serde(default)]
+        y: Option<f64>,
+    },
+    #[serde(rename = "close-popup-menu")]
+    ClosePopupMenu,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -362,7 +383,7 @@ require('{}');
             Event::NewEvents(StartCause::Poll) => {
                 while let Ok(msg) = ipc_rx.try_recv() { st.send_to_node(&msg); }
                 while let Ok(msg) = rx.try_recv() {
-                    handle_to_rust(msg, &mut st, event_loop_target, &ipc_tx, control_flow);
+                    handle_to_rust(msg, &mut st, event_loop_target, &ipc_tx, None, control_flow);
                 }
             }
             Event::WindowEvent { event: WindowEvent::CloseRequested, window_id, .. } => {
@@ -462,7 +483,7 @@ window.__gelectron_run_main(`{}`);
 
                 // Handle ToRust messages from WebView compat layer
                 while let Ok(msg) = to_rust_rx.try_recv() {
-                    handle_to_rust(msg, &mut st, event_loop_target, &ipc_tx, control_flow);
+                    handle_to_rust(msg, &mut st, event_loop_target, &ipc_tx, Some(&to_rust_tx), control_flow);
                 }
 
                 // Auto-create initial window if none exist
@@ -556,11 +577,70 @@ fn create_initial_webview_window(
     }
 }
 
+fn build_muda_menu(
+    menu_json: &serde_json::Value,
+) -> Option<muda::Menu> {
+    let items = menu_json.get("items");
+
+    let menu = muda::Menu::new();
+    if let Some(items_val) = items {
+        build_menu_items_inner(&menu, items_val);
+    }
+    Some(menu)
+}
+
+fn build_menu_items_inner(parent: &muda::Menu, items: &serde_json::Value) {
+    let items_arr = match items.as_array() {
+        Some(a) => a,
+        None => return,
+    };
+
+    for item in items_arr {
+        let label = item.get("label").and_then(|v| v.as_str()).unwrap_or("");
+        let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("normal");
+        let enabled = item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+
+        if item_type == "separator" {
+            let _ = parent.append(&muda::PredefinedMenuItem::separator());
+            continue;
+        }
+
+        if item_type == "submenu" {
+            let submenu = muda::Submenu::new(label, true);
+            if let Some(sub_items) = item.get("submenu") {
+                if let Some(sub_arr) = sub_items.as_array() {
+                    for sub_item in sub_arr {
+                        let sub_label = sub_item.get("label").and_then(|v| v.as_str()).unwrap_or("");
+                        let sub_type = sub_item.get("type").and_then(|v| v.as_str()).unwrap_or("normal");
+                        let sub_enabled = sub_item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+                        if sub_type == "separator" {
+                            let _ = submenu.append(&muda::PredefinedMenuItem::separator());
+                        } else {
+                            let mi = muda::MenuItem::new(sub_label, true, None);
+                            if !sub_enabled { mi.set_enabled(false); }
+                            let _ = submenu.append(&mi);
+                        }
+                    }
+                }
+            }
+            let _ = parent.append(&submenu);
+            continue;
+        }
+
+        let menu_item = muda::MenuItem::new(label, true, None);
+        if !enabled {
+            menu_item.set_enabled(false);
+        }
+        let _ = parent.append(&menu_item);
+    }
+}
+
 fn handle_to_rust(
     msg: ToRust,
     st: &mut AppState,
     event_loop_target: &tao::event_loop::EventLoopWindowTarget<()>,
     ipc_tx: &mpsc::Sender<ToNode>,
+    to_rust_tx: Option<&Arc<mpsc::Sender<ToRust>>>,
     control_flow: &mut ControlFlow,
 ) {
     match msg {
@@ -583,6 +663,7 @@ fn handle_to_rust(
                     let url = options.url.unwrap_or_else(|| "about:blank".into());
                     log::info!("Creating window {} - '{}'", id, url);
                     let ipc_tx_clone = ipc_tx.clone();
+                    let to_rust_tx_clone = to_rust_tx.cloned();
                     let wid_for_ipc = id;
                     match WebViewBuilder::new()
                         .with_url(&url)
@@ -590,12 +671,24 @@ fn handle_to_rust(
                         .with_devtools(true)
                         .with_ipc_handler(move |req| {
                             let body = req.body().to_string();
-                            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&body) {
-                                let msg_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
+                                // Try parsing as a ToRust command (load-file, load-url, etc.)
+                                if let Some(ref tx) = to_rust_tx_clone {
+                                    if let Ok(cmd) = serde_json::from_value::<ToRust>(val.clone()) {
+                                        let _ = tx.send(cmd);
+                                        return;
+                                    }
+                                }
+                                // Fall back to ipc-send handling
+                                let msg_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
                                 if msg_type == "ipc-send" {
-                                    let channel = msg.get("channel").and_then(|v| v.as_str()).unwrap_or("");
-                                    let args = msg.get("args").cloned().unwrap_or(serde_json::Value::Null);
+                                    let channel = val.get("channel").and_then(|v| v.as_str()).unwrap_or("");
+                                    let args = val.get("args").cloned().unwrap_or(serde_json::Value::Null);
                                     let _ = ipc_tx_clone.send(ToNode::IpcMessage { id: wid_for_ipc, channel: channel.to_string(), data: args });
+                                } else if msg_type == "quit" {
+                                    if let Some(ref tx) = to_rust_tx_clone {
+                                        let _ = tx.send(ToRust::Quit);
+                                    }
                                 }
                             }
                         })
@@ -679,6 +772,38 @@ fn handle_to_rust(
         ToRust::Quit => {
             st.windows.clear();
             *control_flow = ControlFlow::Exit;
+        }
+        ToRust::Relaunch { exec_path, args } => {
+            let exe = exec_path.unwrap_or_else(|| std::env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "gelectron".to_string()));
+            let mut cmd = Command::new(&exe);
+            if let Some(a) = args { cmd.args(&a); }
+            let _ = cmd.spawn();
+            st.windows.clear();
+            *control_flow = ControlFlow::Exit;
+        }
+        ToRust::SetApplicationMenu { menu } => {
+            log::info!("Setting application menu");
+            if let Some(muda_menu) = build_muda_menu(&menu) {
+                #[cfg(target_os = "macos")]
+                {
+                    muda_menu.init_for_nsapp();
+                }
+                log::info!("Application menu set");
+            }
+        }
+        ToRust::PopupMenu { menu, x: _x, y: _y } => {
+            log::info!("Popup menu requested");
+            if let Some(muda_menu) = build_muda_menu(&menu) {
+                #[cfg(target_os = "macos")]
+                {
+                    muda_menu.init_for_nsapp();
+                }
+            }
+        }
+        ToRust::ClosePopupMenu => {
+            log::info!("Close popup menu requested");
         }
         _ => {}
     }

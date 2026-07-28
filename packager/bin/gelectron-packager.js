@@ -140,7 +140,14 @@ function copyDirSync(src, dest, exclude) {
     if (exclude && exclude.includes(entry.name)) continue;
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
+    if (entry.isSymbolicLink()) {
+      try {
+        const target = fs.readlinkSync(srcPath);
+        fs.symlinkSync(target, destPath);
+      } catch (e) {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    } else if (entry.isDirectory()) {
       copyDirSync(srcPath, destPath, exclude);
     } else {
       fs.copyFileSync(srcPath, destPath);
@@ -272,7 +279,7 @@ async function packageMac(appDir, outDir, name, version, gelectronBin, nodeDir, 
   const nodeModulesDir = path.join(appDir, 'node_modules');
   if (fs.existsSync(nodeModulesDir)) {
     log('  Copying node_modules...');
-    copyDirSync(nodeModulesDir, path.join(macosDir, 'node_modules'), ['.cache', '.bin']);
+    copyDirSync(nodeModulesDir, path.join(macosDir, 'node_modules'), ['.cache', '.bin', 'electron']);
   }
 
   // Copy src/electron compat layer
@@ -323,7 +330,7 @@ async function packageWindows(appDir, outDir, name, version, gelectronBin, nodeD
   const nodeModulesDir = path.join(appDir, 'node_modules');
   if (fs.existsSync(nodeModulesDir)) {
     log('  Copying node_modules...');
-    copyDirSync(nodeModulesDir, path.join(outDir, 'node_modules'), ['.cache', '.bin']);
+    copyDirSync(nodeModulesDir, path.join(outDir, 'node_modules'), ['.cache', '.bin', 'electron']);
   }
 
   // Copy compat layer
@@ -371,7 +378,7 @@ async function packageLinux(appDir, outDir, name, version, gelectronBin, nodeDir
   const nodeModulesDir = path.join(appDir, 'node_modules');
   if (fs.existsSync(nodeModulesDir)) {
     log('  Copying node_modules...');
-    copyDirSync(nodeModulesDir, path.join(outDir, 'node_modules'), ['.cache', '.bin']);
+    copyDirSync(nodeModulesDir, path.join(outDir, 'node_modules'), ['.cache', '.bin', 'electron']);
   }
 
   // Copy compat layer
@@ -404,7 +411,14 @@ exec "$DIR/${exeName}" "$@"
 const args = process.argv.slice(2);
 const opts = { dir: '.', platform: process.platform, arch: process.arch };
 
+// First non-flag argument is the app directory
+let positionalIdx = 0;
 for (let i = 0; i < args.length; i++) {
+  if (!args[i].startsWith('-') && positionalIdx === 0) {
+    opts.dir = args[i];
+    positionalIdx++;
+    continue;
+  }
   switch (args[i]) {
     case '--dir': case '-d': opts.dir = args[++i]; break;
     case '--name': case '-n': opts.name = args[++i]; break;

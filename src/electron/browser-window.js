@@ -7,6 +7,7 @@
 const { EventEmitter } = require('events');
 const path = require('path');
 const { bridge, isNative } = require('./native-bridge');
+const { app } = require('./app');
 
 class WebContents extends EventEmitter {
   constructor(id) {
@@ -205,6 +206,10 @@ class BrowserWindow extends EventEmitter {
 
     BrowserWindow._windows.set(this.id, this);
 
+    if (typeof app._trackWindow === 'function') {
+      app._trackWindow();
+    }
+
     if (isNative) {
       bridge.createWindow(this.id, {
         width: this._options.width,
@@ -284,6 +289,9 @@ class BrowserWindow extends EventEmitter {
     this._isDestroyed = true;
     if (isNative) bridge.destroyWindow(this.id);
     BrowserWindow._windows.delete(this.id);
+    if (typeof app._untrackWindow === 'function') {
+      app._untrackWindow();
+    }
     this.emit('closed');
   }
 

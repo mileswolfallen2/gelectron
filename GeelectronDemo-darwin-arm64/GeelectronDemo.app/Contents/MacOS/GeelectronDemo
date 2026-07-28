@@ -1,0 +1,5 @@
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+export PATH="$DIR:$PATH"
+export GELECTRON_NATIVE=1
+exec "$DIR/gelectron-bin" "$@"

@@ -2,6 +2,10 @@
 
 /**
  * Gelectron - menu module (Electron compatible)
+ *
+ * Supports native menu rendering through the Rust/tao bridge.
+ * When running in native mode, setApplicationMenu and popup route
+ * through the bridge for native OS menu rendering.
  */
 
 const { EventEmitter } = require('events');
@@ -21,6 +25,15 @@ class MenuItem extends EventEmitter {
     this.toolTip = options.toolTip || '';
     this.icon = options.icon || null;
     this._click = options.click || null;
+
+    // Recursively build submenu
+    if (this.submenu && !(this.submenu instanceof Menu)) {
+      if (Array.isArray(this.submenu)) {
+        this.submenu = Menu.buildFromTemplate(this.submenu);
+      } else {
+        this.submenu = Menu.buildFromTemplate(this.submenu.items || []);
+      }
+    }
   }
 
   click() {
@@ -39,6 +52,7 @@ class Menu extends EventEmitter {
   }
 
   static _nextId = 1;
+  static _applicationMenu = null;
 
   static buildFromTemplate(template) {
     const menu = new Menu();
@@ -60,6 +74,17 @@ class Menu extends EventEmitter {
 
   static setApplicationMenu(menu) {
     Menu._applicationMenu = menu;
+    if (menu) {
+      // Route through bridge if available
+      try {
+        const { bridge, isNative } = require('./native-bridge');
+        if (isNative && bridge) {
+          bridge._send({ type: 'set-application-menu', menu: menu._serialize() });
+        }
+      } catch (e) {
+        // Not available in all contexts
+      }
+    }
   }
 
   append(menuItem) {
@@ -81,10 +106,24 @@ class Menu extends EventEmitter {
   }
 
   popup(options = {}) {
+    try {
+      const { bridge, isNative } = require('./native-bridge');
+      if (isNative && bridge) {
+        bridge._send({ type: 'popup-menu', menu: this._serialize(), x: options.x, y: options.y });
+        return;
+      }
+    } catch (e) {}
     console.log('[gelectron] Menu.popup called');
   }
 
   closePopup() {
+    try {
+      const { bridge, isNative } = require('./native-bridge');
+      if (isNative && bridge) {
+        bridge._send({ type: 'close-popup-menu' });
+        return;
+      }
+    } catch (e) {}
     console.log('[gelectron] Menu.closePopup called');
   }
 
@@ -96,11 +135,36 @@ class Menu extends EventEmitter {
     for (const item of items) {
       if (item.id === id) return item;
       if (item.submenu) {
-        const found = this._findMenuItemById(item.submenu.items || item.submenu, id);
+        const submenu = item.submenu instanceof Menu ? item.submenu.items : (item.submenu.items || item.submenu);
+        const found = this._findMenuItemById(submenu, id);
         if (found) return found;
       }
     }
     return null;
+  }
+
+  _serialize() {
+    return {
+      items: this.items.map((item) => {
+        const obj = {
+          id: item.id,
+          label: item.label,
+          type: item.type,
+          role: item.role,
+          accelerator: item.accelerator,
+          enabled: item.enabled,
+          visible: item.visible,
+          checked: item.checked,
+          toolTip: item.toolTip,
+        };
+        if (item.submenu instanceof Menu) {
+          obj.submenu = item.submenu._serialize();
+        } else if (item.submenu && Array.isArray(item.submenu)) {
+          obj.submenu = Menu.buildFromTemplate(item.submenu)._serialize();
+        }
+        return obj;
+      }),
+    };
   }
 
   items() {

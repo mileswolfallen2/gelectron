@@ -162,6 +162,57 @@
       font-family: 'SF Mono', Menlo, monospace;
     }
 
+    .test-card { grid-column: 1 / -1; }
+    .test-results { margin-top: 12px; }
+    .test-row {
+      display: flex;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid #1f1f35;
+      font-size: 13px;
+    }
+    .test-row:last-child { border-bottom: none; }
+    .test-pass { color: #6bcb77; }
+    .test-fail { color: #ff6b6b; }
+    .test-name { flex: 1; color: #b0b0cc; }
+    .test-value { color: #8888aa; font-family: 'SF Mono', Menlo, monospace; margin-left: 12px; }
+
+    .btn-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .btn-grid button {
+      background: #2a2a4a;
+      color: #e0e0e0;
+      border: 1px solid #3a3a6a;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn-grid button:hover { background: #3a3a6a; }
+    .btn-grid button:active { transform: scale(0.95); }
+    .btn-grid button.active { background: #7b68ee; border-color: #7b68ee; }
+
+    .demo-output {
+      margin-top: 10px;
+      background: #12121f;
+      border: 1px solid #2a2a4a;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 12px;
+      color: #b0b0cc;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 180px;
+      overflow-y: auto;
+      display: none;
+    }
+
     footer {
       padding: 16px 32px;
       border-top: 1px solid #2a2a4a;
@@ -223,6 +274,54 @@
         <span style="background: #ffd93d;"></span>
         <span style="background: #6bcb77;"></span>
         <span style="background: #ee5a24;"></span>
+      </div>
+    </div>
+
+    <div class="card" style="grid-column: 1 / -1;">
+      <h2>App Module Demo</h2>
+      <p>Interactive demo of the Electron app API — properties, methods, and lifecycle.</p>
+      <div class="btn-grid">
+        <button onclick="demoApp('version')">getVersion()</button>
+        <button onclick="demoApp('locale')">getLocale()</button>
+        <button onclick="demoApp('userAgent')">getUserAgent()</button>
+        <button onclick="demoApp('setUserAgent')">setUserAgent()</button>
+        <button onclick="demoApp('appPath')">getAppPath()</button>
+        <button onclick="demoApp('isReady')">isReady</button>
+        <button onclick="demoApp('badge')">setBadgeCount(7)</button>
+        <button onclick="demoApp('metrics')">getAppMetrics()</button>
+        <button onclick="demoApp('gpu')">getGPUInfo()</button>
+        <button onclick="demoApp('gpuFeatures')">getGPUFeatureStatus()</button>
+        <button onclick="demoApp('loginItem')">getLoginItemSettings()</button>
+        <button onclick="demoApp('aboutPanel')">getAboutPanelOptions()</button>
+        <button onclick="demoApp('secureKeyboard')">setSecureKeyboardEntry()</button>
+        <button onclick="demoApp('name')">app.name =</button>
+        <button onclick="demoApp('paths')">getPath(home)</button>
+        <button onclick="demoApp('dock')">dock.bounce()</button>
+      </div>
+      <div class="demo-output" id="app-demo-output"></div>
+    </div>
+
+    <div class="card" style="grid-column: 1 / -1;">
+      <h2>Menu Module Demo</h2>
+      <p>Interactive demo of the Electron Menu API — build, set, and inspect native menus.</p>
+      <div class="btn-grid">
+        <button onclick="demoMenu('build')">Menu.buildFromTemplate()</button>
+        <button onclick="demoMenu('set')">Menu.setApplicationMenu()</button>
+        <button onclick="demoMenu('get')">Menu.getApplicationMenu()</button>
+        <button onclick="demoMenu('findById')">getMenuItemById()</button>
+        <button onclick="demoMenu('append')">menu.append()</button>
+        <button onclick="demoMenu('serialize')">menu._serialize()</button>
+        <button onclick="demoMenu('count')">menu.items.length</button>
+        <button onclick="demoMenu('submenu')">Submenu nesting</button>
+      </div>
+      <div class="demo-output" id="menu-demo-output"></div>
+    </div>
+
+    <div class="card test-card">
+      <h2>App Module Tests</h2>
+      <p>Automated tests for the Electron app compatibility layer.</p>
+      <div id="app-tests" class="test-results">
+        <p style="color: #8888aa; font-size: 13px;">Waiting for test results...</p>
       </div>
     </div>
   </main>
@@ -290,6 +389,318 @@
     document.getElementById('env-arch').textContent = 'unknown (browser sandbox)';
     document.getElementById('env-node').textContent = 'N/A in renderer';
     document.getElementById('env-ua').textContent = navigator.userAgent;
+
+    // App module interactive demo
+    function demoApp(action) {
+      var out = document.getElementById('app-demo-output');
+      out.style.display = 'block';
+      var electron = window.electron;
+      if (!electron || !electron.app) {
+        out.textContent = 'Error: window.electron.app not available (renderer-only mode)';
+        return;
+      }
+      var app = electron.app;
+      var result = '';
+      switch (action) {
+        case 'version':
+          result = 'app.getVersion() → ' + app.getVersion() +
+                   '\napp.version (property) → ' + app.version;
+          break;
+        case 'locale':
+          result = 'app.getLocale() → ' + app.getLocale() +
+                   '\napp.locale (property) → ' + app.locale;
+          break;
+        case 'userAgent':
+          result = 'app.getUserAgent() → ' + app.getUserAgent() +
+                   '\napp.userAgent (property) → ' + app.userAgent;
+          break;
+        case 'setUserAgent':
+          app.setUserAgent('GelectronDemo/2.0');
+          result = 'app.setUserAgent("GelectronDemo/2.0")' +
+                   '\napp.getUserAgent() → ' + app.getUserAgent();
+          app.setUserAgent(null);
+          result += '\napp.setUserAgent(null) reset → ' + app.getUserAgent();
+          break;
+        case 'appPath':
+          result = 'app.getAppPath() → ' + app.getAppPath() +
+                   '\napp.appPath (property) → ' + app.appPath;
+          break;
+        case 'isReady':
+          result = 'app.isReady (property) → ' + app.isReady +
+                   '\napp.isReady() method → ' + app.isReady() +
+                   '\napp.whenReady() → [Promise resolved]';
+          app.whenReady().then(function() {
+            out.textContent += '\n→ whenReady promise resolved!';
+          });
+          break;
+        case 'badge':
+          app.setBadgeCount(7);
+          result = 'app.setBadgeCount(7)' +
+                   '\napp.getBadgeCount() → ' + app.getBadgeCount();
+          app.setBadgeCount(0);
+          result += '\napp.setBadgeCount(0) → ' + app.getBadgeCount();
+          break;
+        case 'metrics':
+          var m = app.getAppMetrics();
+          result = 'app.getAppMetrics() → [' + m.length + ' entries]' +
+                   '\n  pid: ' + m[0].pid +
+                   '\n  type: ' + m[0].type +
+                   '\n  memory: ' + JSON.stringify(m[0].memory) +
+                   '\n  sandboxed: ' + m[0].sandboxed;
+          break;
+        case 'gpu':
+          app.getGPUInfo('basic').then(function(info) {
+            out.textContent = 'app.getGPUInfo("basic") →\n' +
+              '  GPUActive: ' + info.GPUActive +
+              '\n  gpuDevice: ' + JSON.stringify(info.gpuDevice, null, 2);
+          });
+          result = 'Loading GPU info...';
+          break;
+        case 'gpuFeatures':
+          var f = app.getGPUFeatureStatus();
+          var lines = ['app.getGPUFeatureStatus() →'];
+          for (var k in f) lines.push('  ' + k + ': ' + f[k]);
+          result = lines.join('\n');
+          break;
+        case 'loginItem':
+          var s = app.getLoginItemSettings();
+          result = 'app.getLoginItemSettings() →\n' +
+            '  openAtLogin: ' + s.openAtLogin +
+            '\n  openAsHidden: ' + s.openAsHidden +
+            '\n  launchAtLogin: ' + s.launchAtLogin +
+            '\n  launchItems: ' + JSON.stringify(s.launchItems);
+          break;
+        case 'aboutPanel':
+          app.setAboutPanelOptions({ applicationName: 'Gelectron Demo', copyright: 'MIT' });
+          var o = app.getAboutPanelOptions();
+          result = 'app.setAboutPanelOptions({ applicationName: "Gelectron Demo", copyright: "MIT" })' +
+                   '\napp.getAboutPanelOptions() →\n' + JSON.stringify(o, null, 2);
+          break;
+        case 'secureKeyboard':
+          app.setSecureKeyboardEntryEnabled(true);
+          result = 'app.setSecureKeyboardEntryEnabled(true)' +
+                   '\napp.isSecureKeyboardEntryEnabled() → ' + app.isSecureKeyboardEntryEnabled();
+          app.setSecureKeyboardEntryEnabled(false);
+          result += '\napp.setSecureKeyboardEntryEnabled(false)' +
+                    '\napp.isSecureKeyboardEntryEnabled() → ' + app.isSecureKeyboardEntryEnabled();
+          break;
+        case 'name':
+          var old = app.name;
+          app.name = 'Gelectron Demo App';
+          result = 'app.name = "Gelectron Demo App"' +
+                   '\napp.name → ' + app.name +
+                   '\napp.getName() → ' + app.getName();
+          app.name = old;
+          result += '\n(app.name restored to "' + old + '")';
+          break;
+        case 'paths':
+          result = 'app.getPath("home") → ' + app.getPath('home') +
+                   '\napp.getPath("userData") → ' + app.getPath('userData') +
+                   '\napp.getPath("temp") → ' + app.getPath('temp') +
+                   '\napp.getPath("desktop") → ' + app.getPath('desktop') +
+                   '\napp.getPath("documents") → ' + app.getPath('documents') +
+                   '\napp.getPath("downloads") → ' + app.getPath('downloads') +
+                   '\napp.getPath("logs") → ' + app.getPath('logs');
+          break;
+        case 'dock':
+          if (app.dock) {
+            var id = app.dock.bounce();
+            result = 'app.dock.bounce() → ' + id +
+                     '\napp.dock.isVisible() → ' + app.dock.isVisible() +
+                     '\napp.dock.getBadge() → "' + app.dock.getBadge() + '"';
+          } else {
+            result = 'app.dock → null (not macOS)';
+          }
+          break;
+      }
+      out.textContent = result;
+    }
+
+    // Menu module interactive demo
+    function demoMenu(action) {
+      var out = document.getElementById('menu-demo-output');
+      out.style.display = 'block';
+      var electron = window.electron;
+      if (!electron || !electron.Menu) {
+        out.textContent = 'Error: window.electron.Menu not available';
+        return;
+      }
+      var Menu = electron.Menu;
+      var MenuItem = electron.MenuItem;
+      var result = '';
+      switch (action) {
+        case 'build': {
+          var menu = Menu.buildFromTemplate([
+            { label: 'File', submenu: [
+              { label: 'New', accelerator: 'CmdOrCtrl+N' },
+              { label: 'Open', accelerator: 'CmdOrCtrl+O' },
+              { type: 'separator' },
+              { label: 'Quit', accelerator: 'CmdOrCtrl+Q' },
+            ]},
+            { label: 'Edit', submenu: [
+              { label: 'Cut', accelerator: 'CmdOrCtrl+X' },
+              { label: 'Copy', accelerator: 'CmdOrCtrl+C' },
+              { label: 'Paste', accelerator: 'CmdOrCtrl+V' },
+            ]},
+            { label: 'Help', submenu: [
+              { label: 'About Gelectron' },
+            ]},
+          ]);
+          result = 'Menu.buildFromTemplate([...]) → Menu {\n' +
+            '  items.length: ' + menu.items.length + '\n' +
+            '  items[0].label: "' + menu.items[0].label + '"\n' +
+            '  items[0].submenu.items.length: ' + menu.items[0].submenu.items.length + '\n' +
+            '  items[1].label: "' + menu.items[1].label + '"\n' +
+            '  items[2].label: "' + menu.items[2].label + '"\n' +
+            '}';
+          break;
+        }
+        case 'set': {
+          var menu = Menu.buildFromTemplate([
+            { label: 'File', submenu: [
+              { label: 'New Window', accelerator: 'CmdOrCtrl+N' },
+              { type: 'separator' },
+              { label: 'Quit', accelerator: 'CmdOrCtrl+Q' },
+            ]},
+            { label: 'View', submenu: [
+              { label: 'Reload', accelerator: 'CmdOrCtrl+R' },
+              { label: 'Toggle DevTools', accelerator: 'CmdOrCtrl+Shift+I' },
+            ]},
+          ]);
+          Menu.setApplicationMenu(menu);
+          var current = Menu.getApplicationMenu();
+          result = 'Menu.setApplicationMenu(menu) → sent to native bridge' +
+                   '\nMenu.getApplicationMenu() → ' + (current ? 'Menu { items: ' + current.items.length + ' }' : 'null');
+          break;
+        }
+        case 'get': {
+          var current = Menu.getApplicationMenu();
+          if (current) {
+            var labels = current.items.map(function(i) { return i.label; });
+            result = 'Menu.getApplicationMenu() → Menu {\n' +
+              '  items: [' + labels.join(', ') + ']\n' +
+              '  items.length: ' + current.items.length + '\n' +
+              '}';
+          } else {
+            result = 'Menu.getApplicationMenu() → null\n(No application menu set yet. Click "Menu.setApplicationMenu()" first.)';
+          }
+          break;
+        }
+        case 'findById': {
+          var menu = Menu.buildFromTemplate([
+            { id: 'file-menu', label: 'File', submenu: [
+              { id: 'new-file', label: 'New File' },
+              { id: 'open-file', label: 'Open File' },
+            ]},
+            { id: 'edit-menu', label: 'Edit', submenu: [
+              { id: 'copy-item', label: 'Copy' },
+            ]},
+          ]);
+          var item = menu.getMenuItemById('new-file');
+          var item2 = menu.getMenuItemById('copy-item');
+          var missing = menu.getMenuItemById('nonexistent');
+          result = 'menu.getMenuItemById("new-file") →\n' +
+            '  label: "' + (item ? item.label : 'null') + '"\n' +
+            '  id: "' + (item ? item.id : 'null') + '"' +
+            '\nmenu.getMenuItemById("copy-item") →\n' +
+            '  label: "' + (item2 ? item2.label : 'null') + '"' +
+            '\nmenu.getMenuItemById("nonexistent") → ' + (missing ? 'found' : 'null');
+          break;
+        }
+        case 'append': {
+          var menu = Menu.buildFromTemplate([
+            { label: 'Existing Item' },
+          ]);
+          result = 'Before append: items.length = ' + menu.items.length;
+          menu.append(new MenuItem({ label: 'Appended Item', type: 'normal' }));
+          result += '\nmenu.append(new MenuItem({ label: "Appended Item" }))' +
+                    '\nAfter append: items.length = ' + menu.items.length +
+                    '\n  items[0].label: "' + menu.items[0].label + '"' +
+                    '\n  items[1].label: "' + menu.items[1].label + '"';
+          break;
+        }
+        case 'serialize': {
+          var menu = Menu.buildFromTemplate([
+            { label: 'File', submenu: [
+              { label: 'New', accelerator: 'CmdOrCtrl+N' },
+              { type: 'separator' },
+              { label: 'Quit' },
+            ]},
+            { label: 'Edit', enabled: false },
+          ]);
+          var s = menu._serialize();
+          result = 'menu._serialize() →\n' + JSON.stringify(s, null, 2);
+          break;
+        }
+        case 'count': {
+          var menu = Menu.buildFromTemplate([
+            { label: 'File', submenu: [{ label: 'New' }] },
+            { label: 'Edit' },
+            { label: 'View' },
+            { label: 'Help' },
+          ]);
+          result = 'Menu.buildFromTemplate(4 top-level items)' +
+                   '\nmenu.items.length → ' + menu.items.length +
+                   '\nmenu.items.map(i => i.label) → [' +
+                   menu.items.map(function(i) { return '"' + i.label + '"'; }).join(', ') + ']' +
+                   '\nmenu.items[0].submenu.items.length → ' + menu.items[0].submenu.items.length;
+          break;
+        }
+        case 'submenu': {
+          var menu = Menu.buildFromTemplate([
+            { label: 'Format', submenu: [
+              { label: 'Font', submenu: [
+                { label: 'Bold', type: 'checkbox' },
+                { label: 'Italic', type: 'checkbox' },
+                { label: 'Underline', type: 'checkbox' },
+              ]},
+              { type: 'separator' },
+              { label: 'Align Left' },
+              { label: 'Align Center' },
+              { label: 'Align Right' },
+            ]},
+          ]);
+          var fmt = menu.items[0];
+          result = 'Menu with nested submenus:' +
+                   '\nmenu.items[0].label → "' + fmt.label + '"' +
+                   '\nmenu.items[0].submenu.items.length → ' + fmt.submenu.items.length +
+                   '\nmenu.items[0].submenu.items[0].label → "' + fmt.submenu.items[0].label + '"' +
+                   '\nmenu.items[0].submenu.items[0].submenu.items.length → ' +
+                   fmt.submenu.items[0].submenu.items.length +
+                   '\n  nested items: ' +
+                   fmt.submenu.items[0].submenu.items.map(function(i) {
+                     return '"' + i.label + '"';
+                   }).join(', ');
+          break;
+        }
+      }
+      out.textContent = result;
+    }
+
+    // App test results renderer
+    function renderAppTests() {
+      var results = window.__appTestResults;
+      if (!results) return;
+      var el = document.getElementById('app-tests');
+      var html = '';
+      var pass = 0, fail = 0;
+      for (var i = 0; i < results.length; i++) {
+        var r = results[i];
+        var cls = r.status === 'PASS' ? 'test-pass' : 'test-fail';
+        var icon = r.status === 'PASS' ? '\u2713' : '\u2717';
+        if (r.status === 'PASS') pass++; else fail++;
+        html += '<div class="test-row">' +
+          '<span class="' + cls + '">' + icon + '</span>' +
+          '<span class="test-name">' + r.name + '</span>' +
+          '<span class="test-value">' + r.value + '</span>' +
+          '</div>';
+      }
+      html = '<div style="margin-bottom: 12px; font-size: 14px; font-weight: 600;">' +
+        '<span class="test-pass">' + pass + ' passed</span> &middot; ' +
+        '<span class="test-fail">' + fail + ' failed</span> &middot; ' +
+        (pass + fail) + ' total</div>' + html;
+      el.innerHTML = html;
+    }
   </script>
 </body>
 </html>
