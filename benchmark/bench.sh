@@ -53,8 +53,33 @@ printf "  │ Compat layer        │      N/A │ %6sMB │\n" "${GEELECTRON_CO
 echo "  └─────────────────────┴───────────┴────────┘"
 echo ""
 
+# ── Recursive helpers (macOS-compatible) ──
+# Sum RSS of a PID and all its descendants (process tree).
+total_rss() {
+  local root="$1"
+  ps -eo pid,ppid,rss | awk -v root="$root" '
+  function sum_tree(pid, total, i) {
+    total = 0;
+    for(i=1;i<=NR;i++) { if(pids[i]==pid) { total = rss[i]; break; } }
+    for(i=1;i<=NR;i++) { if(ppids[i]==pid && pids[i]!=pid) total += sum_tree(pids[i]); }
+    return total;
+  }
+  { pids[NR]=$1; ppids[NR]=$2; rss[NR]=$3+0; }
+  END { printf "%d\n", sum_tree(root+0); }
+  '
+}
+
+# Recursively kill a process tree.
+kill_tree() {
+  local root="$1"
+  for c in $(ps -eo pid,ppid | awk -v p=$root '$2==p && $1!=p {print $1}'); do
+    kill_tree "$c"
+  done
+  kill -9 "$root" 2>/dev/null || true
+}
+
 # ── Benchmark function ──
-# Runs a binary, waits for it to stabilize, captures memory, kills it, measures time.
+# Runs a binary, waits for it to stabilize, captures memory (process tree RSS), kills it.
 benchmark_run() {
   local name="$1"
   shift
@@ -64,8 +89,8 @@ benchmark_run() {
   "${cmd[@]}" &>/dev/null &
   local pid=$!
 
-  # Wait for process to exist and settle
-  sleep 2
+  # Wait for all processes to reach steady state
+  sleep 5
 
   # Check if still running
   if ! kill -0 "$pid" 2>/dev/null; then
@@ -73,34 +98,16 @@ benchmark_run() {
     return
   fi
 
-  # Capture total RSS across parent + all child processes
+  # Total RSS across entire process tree
   local rss_kb
-  rss_kb=$(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ')
-  # Add child process (Node.js) memory
-  local child_rss
-  child_rss=$(ps -o rss= --ppid "$pid" 2>/dev/null | awk '{s+=$1} END {print s+0}')
-  rss_kb=$(( ${rss_kb:-0} + ${child_rss:-0} ))
+  rss_kb=$(total_rss "$pid")
 
-  # Kill it
-  kill -9 "$pid" 2>/dev/null || true
-  sleep 0.2
+  # Kill entire process tree
+  kill_tree "$pid"
+  sleep 0.5
 
   echo "${rss_kb:-0}"
 }
-
-# ── Warmup run ──
-echo "  Warming up..."
-"$ELECTRON_BIN" "$BENCH_DIR" &>/dev/null &
-sleep 3
-killall -9 Electron 2>/dev/null || true
-sleep 1
-
-"$GEELECTRON_BIN" "$DEMO_APP" &>/dev/null &
-sleep 3
-killall -9 gelectron 2>/dev/null || true
-sleep 1
-echo "  Done."
-echo ""
 
 # ── Run benchmarks ──
 ELECTRON_TIMES=()
@@ -111,22 +118,11 @@ GEELECTRON_MEMS=()
 echo "  Running Electron x$RUNS..."
 for i in $(seq 1 $RUNS); do
   START=$(python3 -c 'import time; print(time.time())')
-
-  "$ELECTRON_BIN" "$BENCH_DIR" &>/dev/null &
-  PID=$!
-  sleep 3
-
-  # Total RSS: parent + all children
-  PARENT_RSS=$(ps -o rss= -p "$PID" 2>/dev/null | tr -d ' ')
-  CHILD_RSS=$(ps -o rss= --ppid "$PID" 2>/dev/null | awk '{s+=$1} END {print s+0}')
-  RSS=$(( ${PARENT_RSS:-0} + ${CHILD_RSS:-0} ))
+  RSS_KB=$(benchmark_run "electron" "$ELECTRON_BIN" "$BENCH_DIR")
   END=$(python3 -c 'import time; print(time.time())')
 
-  kill -9 "$PID" 2>/dev/null || true
-  sleep 0.2
-
   ELAPSED=$(python3 -c "print(f'{$END - $START:.3f}')")
-  MEM_MB=$(python3 -c "print(f'{$RSS / 1024:.1f}')")
+  MEM_MB=$(python3 -c "print(f'{$RSS_KB / 1024:.1f}')")
 
   ELECTRON_TIMES+=("$ELAPSED")
   ELECTRON_MEMS+=("$MEM_MB")
@@ -137,24 +133,11 @@ echo ""
 echo "  Running Gelectron x$RUNS..."
 for i in $(seq 1 $RUNS); do
   START=$(python3 -c 'import time; print(time.time())')
-
-  "$GEELECTRON_BIN" "$DEMO_APP" &>/dev/null &
-  PID=$!
-  sleep 3
-
-  # Total RSS: parent + all children (Rust + Node.js)
-  PARENT_RSS=$(ps -o rss= -p "$PID" 2>/dev/null | tr -d ' ')
-  CHILD_RSS=$(ps -o rss= --ppid "$PID" 2>/dev/null | awk '{s+=$1} END {print s+0}')
-  RSS=$(( ${PARENT_RSS:-0} + ${CHILD_RSS:-0} ))
+  RSS_KB=$(benchmark_run "gelectron" "$GEELECTRON_BIN" "$DEMO_APP")
   END=$(python3 -c 'import time; print(time.time())')
 
-  kill -9 "$PID" 2>/dev/null || true
-  # Also kill Node.js child
-  ps -o pid= --ppid "$PID" 2>/dev/null | xargs kill -9 2>/dev/null || true
-  sleep 0.2
-
   ELAPSED=$(python3 -c "print(f'{$END - $START:.3f}')")
-  MEM_MB=$(python3 -c "print(f'{$RSS / 1024:.1f}')")
+  MEM_MB=$(python3 -c "print(f'{$RSS_KB / 1024:.1f}')")
 
   GEELECTRON_TIMES+=("$ELAPSED")
   GEELECTRON_MEMS+=("$MEM_MB")

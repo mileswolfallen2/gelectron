@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-07-29T03:22:15Z",
+  "runs": 10,
+  "platform": "Darwin arm64",
+  "electron": {
+    "version": "v43.2.0",
+    "avg_startup_s": 5.671,
+    "min_startup_s": 5.668,
+    "max_startup_s": 5.674,
+    "avg_memory_mb": 585.9,
+    "min_memory_mb": 583.3,
+    "max_memory_mb": 587.4,
+    "runtime_size_mb": 296,
+    "raw_times": [5.670,5.672,5.674,5.672,5.671,5.668,5.670,5.668,5.673,5.672],
+    "raw_memory": [583.7,586.5,583.3,587.1,586.5,587.4,586.5,587.1,584.1,586.3]
+  },
+  "gelectron": {
+    "avg_startup_s": 5.601,
+    "min_startup_s": 5.598,
+    "max_startup_s": 5.604,
+    "avg_memory_mb": 131.4,
+    "min_memory_mb": 131.0,
+    "max_memory_mb": 131.7,
+    "runtime_size_mb": 3,
+    "raw_times": [5.600,5.601,5.602,5.602,5.598,5.600,5.601,5.602,5.602,5.604],
+    "raw_memory": [131.6,131.7,131.3,131.5,131.3,131.7,131.0,131.5,131.3,131.5]
+  }
+}

@@ -17,3 +17,6 @@ lto = true
 opt-level = 3
 strip = "symbols"
 codegen-units = 1
+
+[patch.crates-io]
+wry = { path = "vendor/wry" }

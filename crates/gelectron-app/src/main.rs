@@ -11,8 +11,6 @@ use std::sync::mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::sync::Arc;
-
-use image::ImageEncoder;
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::{Fullscreen, WindowBuilder, WindowId};
@@ -367,8 +365,9 @@ require('{}');
     );
 
     let mut child: Child = Command::new(&node_path)
-        .arg("--max-old-space-size=64")
-        .arg("--expose-gc")
+        .arg("--max-old-space-size=32")
+        .arg("--optimize-for-size")
+        .arg("--v8-pool-size=1")
         .arg("-e")
         .arg(&setup_script)
         .stdin(Stdio::piped())
@@ -615,7 +614,7 @@ fn create_initial_webview_window(
         match WebViewBuilder::new()
             .with_url("about:blank")
             .with_initialization_script(&init_script)
-            .with_devtools(true)
+            .with_devtools(false)
             .with_ipc_handler(move |req| {
                 let body = req.body().to_string();
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
@@ -766,7 +765,7 @@ fn handle_to_rust(
                     match WebViewBuilder::new()
                         .with_url(&url)
                         .with_initialization_script(&init)
-                        .with_devtools(true)
+                        .with_devtools(false)
                         .with_ipc_handler(move |req| {
                             let body = req.body().to_string();
                             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
@@ -814,7 +813,9 @@ fn handle_to_rust(
             }
         }
         ToRust::LoadFile { id, path } => {
-            let url = format!("file://{}", std::fs::canonicalize(&path).unwrap_or_default().display());
+            let url = url::Url::from_file_path(std::fs::canonicalize(&path).unwrap_or_default())
+                .map(|u| u.to_string())
+                .unwrap_or_else(|_| "about:blank".into());
             log::info!("Loading file in window {}: {}", id, url);
             let init = st.bundle_js.clone().unwrap_or_else(|| preload_script());
             if let Some(pair) = st.windows.get_mut(&id) {
@@ -825,7 +826,7 @@ fn handle_to_rust(
                 match WebViewBuilder::new()
                     .with_url(&url)
                     .with_initialization_script(&init)
-                    .with_devtools(true)
+                    .with_devtools(false)
                     .with_ipc_handler(move |req| {
                         let body = req.body().to_string();
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
@@ -933,7 +934,6 @@ fn handle_to_rust(
                 .and_then(|mut c| c.get_image())
                 .ok()
                 .and_then(|img| {
-                    // Convert ARGB to RGBA for PNG encoding
                     let w = img.width;
                     let h = img.height;
                     let bytes = &img.bytes;
@@ -943,20 +943,16 @@ fn handle_to_rust(
                             rgba.extend_from_slice(&[chunk[1], chunk[2], chunk[3], chunk[0]]);
                         }
                     }
-                    // Encode as PNG
-                    image::RgbaImage::from_raw(w as u32, h as u32, rgba)
-                        .and_then(|img_buf| {
-                            let mut buf = std::io::Cursor::new(Vec::new());
-                            image::codecs::png::PngEncoder::new(&mut buf)
-                                .write_image(
-                                    &img_buf,
-                                    img_buf.width(),
-                                    img_buf.height(),
-                                    image::ExtendedColorType::Rgba8,
-                                ).ok()?;
-                            use base64::Engine;
-                            Some(base64::engine::general_purpose::STANDARD.encode(buf.into_inner()))
-                        })
+                    let mut buf = std::io::Cursor::new(Vec::new());
+                    {
+                        let mut encoder = png::Encoder::new(&mut buf, w as u32, h as u32);
+                        encoder.set_color(png::ColorType::Rgba);
+                        encoder.set_depth(png::BitDepth::Eight);
+                        let mut writer = encoder.write_header().ok()?;
+                        writer.write_image_data(&rgba).ok()?;
+                    }
+                    use base64::Engine;
+                    Some(base64::engine::general_purpose::STANDARD.encode(buf.into_inner()))
                 })
                 .unwrap_or_default();
             if let Some(ref tx) = st.response_tx {
@@ -967,20 +963,24 @@ fn handle_to_rust(
             if let Ok(mut c) = arboard::Clipboard::new() {
                 use base64::Engine;
                 if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data) {
-                    if let Ok(img) = image::load_from_memory(&bytes) {
-                        let rgba = img.to_rgba8();
-                        let (w, h) = rgba.dimensions();
-                        let raw = rgba.into_raw();
-                        // Convert RGBA to ARGB for arboard
-                        let mut argb = Vec::with_capacity(raw.len());
-                        for chunk in raw.chunks_exact(4) {
-                            argb.extend_from_slice(&[chunk[3], chunk[0], chunk[1], chunk[2]]);
+                    use std::io::Read;
+                    let cursor = std::io::Cursor::new(&bytes[..]);
+                    let decoder = png::Decoder::new(cursor);
+                    if let Ok(mut reader) = decoder.read_info() {
+                        let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+                        if let Ok(info) = reader.next_frame(&mut buf) {
+                            let (w, h) = (info.width, info.height);
+                            let raw = &buf[..(w as usize * h as usize * 4)];
+                            let mut argb = Vec::with_capacity(raw.len());
+                            for chunk in raw.chunks_exact(4) {
+                                argb.extend_from_slice(&[chunk[3], chunk[0], chunk[1], chunk[2]]);
+                            }
+                            let _ = c.set_image(arboard::ImageData {
+                                width: w as usize,
+                                height: h as usize,
+                                bytes: argb.into(),
+                            });
                         }
-                        let _ = c.set_image(arboard::ImageData {
-                            width: w as usize,
-                            height: h as usize,
-                            bytes: argb.into(),
-                        });
                     }
                 }
             }
@@ -1126,10 +1126,20 @@ fn handle_to_rust(
             });
         }
         ToRust::ShellOpenExternal { url } => {
-            let _ = open::that(&url);
+            #[cfg(target_os = "macos")]
+            { let _ = std::process::Command::new("open").arg(&url).spawn(); }
+            #[cfg(target_os = "windows")]
+            { let _ = std::process::Command::new("cmd").args(["/c", "start", "", &url]).spawn(); }
+            #[cfg(target_os = "linux")]
+            { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
         }
         ToRust::ShellOpenPath { path } => {
-            let _ = open::that(&path);
+            #[cfg(target_os = "macos")]
+            { let _ = std::process::Command::new("open").arg(&path).spawn(); }
+            #[cfg(target_os = "windows")]
+            { let _ = std::process::Command::new("explorer").arg(&path).spawn(); }
+            #[cfg(target_os = "linux")]
+            { let _ = std::process::Command::new("xdg-open").arg(&path).spawn(); }
         }
         ToRust::ShellShowInFolder { path } => {
             #[cfg(target_os = "macos")]

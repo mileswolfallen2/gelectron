@@ -20,6 +20,6 @@ tao = "0.30"
 muda = "0.15"
 arboard = "3"
 rfd = "0.15"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+png = "0.18"
 base64 = "0.22"
-open = "5"
+url = { workspace = true }

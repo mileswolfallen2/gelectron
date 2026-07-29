@@ -104,8 +104,8 @@
 | **full** | 2 | app, ipcMain |
 | **partial** | 15 | BrowserWindow, Menu, MenuItem, dialog, shell, Notification, nativeImage, contextBridge, webContents, ipcRenderer, net, process, clipboard, screen, nativeTheme |
 | **stub** | 7 | Tray, safeStorage, autoUpdater, session, systemPreferences, powerMonitor, globalShortcut |
-| **missing** | 37 | BaseWindow, BrowserView, contentTracing, crashReporter, desktopCapturer, ImageView, inAppPurchase, MessageChannelMain, netLog, powerSaveBlocker, protocol, pushNotifications, ServiceWorkerMain, sharedTexture, ShareMenu, TouchBar (+10 sub-classes), utilityProcess, View, WebContentsView, webFrameMain, webFrame, webUtils, crashReporter (renderer), sharedTexture (renderer), remote, webviewTag, navigation-history, parent-port, web-request, web-socket, window-open, local-ai-handler |
-| **Total** | **60** | | |
+| **missing** | 36 | BaseWindow, BrowserView, contentTracing, crashReporter, desktopCapturer, ImageView, inAppPurchase, MessageChannelMain, netLog, powerSaveBlocker, protocol, pushNotifications, ServiceWorkerMain, sharedTexture, ShareMenu, TouchBar (+10 sub-classes), utilityProcess, View, WebContentsView, webFrameMain, webFrame, webUtils, crashReporter (renderer), sharedTexture (renderer), remote, webviewTag, navigation-history, parent-port, web-request, web-socket, window-open, local-ai-handler |
+| **Total** | **60** | BrowserView counted once (listed in both Main and Deprecated tables) |
 
 ## Rust Bridge (main.rs ToRust commands)
 

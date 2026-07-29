@@ -1,27 +1,35 @@
 'use strict';
 
-/**
- * Gelectron - Electron compatibility layer.
- * Drop-in replacement for require('electron').
- */
-
-const { app } = require('./app');
-const { BrowserWindow } = require('./browser-window');
-const ipcMain = require('./ipc-main');
-const { Menu, MenuItem } = require('./menu');
-const { Tray } = require('./tray');
-const dialog = require('./dialog');
-const shell = require('./shell');
-const { Notification } = require('./notification');
-const nativeImage = require('./native-image');
-const safeStorage = require('./safe-storage');
-const contextBridge = require('./context-bridge');
-const webContents = require('./web-contents');
-const { autoUpdater, AutoUpdater } = require('./auto-updater');
 const { bridge, isNative } = require('./native-bridge');
-const clipboard = require('./clipboard');
-const { Screen } = require('./screen');
-const nativeTheme = require('./nativeTheme');
+const ipcMain = require('./ipc-main');
+const nativeImage = require('./native-image');
+
+let _app, _BrowserWindow, _Menu, _MenuItem, _Tray, _dialog, _shell;
+let _Notification, _safeStorage, _contextBridge, _webContents;
+let _autoUpdater, _AutoUpdater, _clipboard, _Screen, _nativeTheme;
+
+function lazy(loader) {
+  let mod;
+  return function () {
+    if (!mod) mod = loader();
+    return mod;
+  };
+}
+
+const lazyApp = lazy(() => { _app = require('./app').app; return _app; });
+const lazyBrowserWindow = lazy(() => { _BrowserWindow = require('./browser-window').BrowserWindow; return _BrowserWindow; });
+const lazyMenu = lazy(() => { const m = require('./menu'); _Menu = m.Menu; _MenuItem = m.MenuItem; return { Menu: _Menu, MenuItem: _MenuItem }; });
+const lazyTray = lazy(() => { _Tray = require('./tray').Tray; return _Tray; });
+const lazyDialog = lazy(() => { _dialog = require('./dialog'); return _dialog; });
+const lazyShell = lazy(() => { _shell = require('./shell'); return _shell; });
+const lazyNotification = lazy(() => { _Notification = require('./notification').Notification; return _Notification; });
+const lazySafeStorage = lazy(() => { _safeStorage = require('./safe-storage'); return _safeStorage; });
+const lazyContextBridge = lazy(() => { _contextBridge = require('./context-bridge'); return _contextBridge; });
+const lazyWebContents = lazy(() => { _webContents = require('./web-contents'); return _webContents; });
+const lazyAutoUpdater = lazy(() => { const a = require('./auto-updater'); _autoUpdater = a.autoUpdater; _AutoUpdater = a.AutoUpdater; return { autoUpdater: _autoUpdater, AutoUpdater: _AutoUpdater }; });
+const lazyClipboard = lazy(() => { _clipboard = require('./clipboard'); return _clipboard; });
+const lazyScreen = lazy(() => { if (!_Screen) _Screen = require('./screen').Screen; return new _Screen(); });
+const lazyNativeTheme = lazy(() => { _nativeTheme = require('./nativeTheme'); return _nativeTheme; });
 
 if (isNative) {
   bridge.on('ipc-message', (windowId, channel, data) => {
@@ -81,62 +89,73 @@ const sessionStub = {
 };
 
 module.exports = {
-  app,
-  BrowserWindow,
-  ipcMain,
-  Menu,
-  MenuItem,
-  Tray,
-  dialog,
-  shell,
-  Notification,
-  nativeImage,
-  safeStorage,
-  contextBridge,
-  webContents,
-  autoUpdater,
-  AutoUpdater,
-  session: sessionStub,
-  clipboard,
-  screen: new Screen(),
-  nativeTheme,
+  get app() { return lazyApp(); },
+  get BrowserWindow() { return lazyBrowserWindow(); },
+  get ipcMain() { return ipcMain; },
+  get Menu() { return lazyMenu().Menu; },
+  get MenuItem() { return lazyMenu().MenuItem; },
+  get Tray() { return lazyTray(); },
+  get dialog() { return lazyDialog(); },
+  get shell() { return lazyShell(); },
+  get Notification() { return lazyNotification(); },
+  get nativeImage() { return nativeImage; },
+  get safeStorage() { return lazySafeStorage(); },
+  get contextBridge() { return lazyContextBridge(); },
+  get webContents() { return lazyWebContents(); },
+  get autoUpdater() { return lazyAutoUpdater().autoUpdater; },
+  get AutoUpdater() { return lazyAutoUpdater().AutoUpdater; },
+  get session() { return sessionStub; },
+  get clipboard() { return lazyClipboard(); },
+  get screen() { return lazyScreen(); },
+  get nativeTheme() { return lazyNativeTheme(); },
 
-  systemPreferences: {
-    isDarkMode: () => nativeTheme.shouldUseDarkColors,
-    getAccentColor: () => '#007AFF',
-    getColor: () => '#ffffff',
-    isSwipeTrackingFromScrollEventsEnabled: () => false,
-    subscribeNotification: () => () => {},
-    unsubscribeNotification: () => {},
-    subscribeLocalNotification: () => () => {},
-    unsubscribeLocalNotification: () => {},
-    getUserDefault: () => null,
-    setUserDefault: () => {},
-    removeUserDefault: () => {},
+  get systemPreferences() {
+    const nt = lazyNativeTheme();
+    return {
+      isDarkMode: () => nt.shouldUseDarkColors,
+      getAccentColor: () => '#007AFF',
+      getColor: () => '#ffffff',
+      isSwipeTrackingFromScrollEventsEnabled: () => false,
+      subscribeNotification: () => () => {},
+      unsubscribeNotification: () => {},
+      subscribeLocalNotification: () => () => {},
+      unsubscribeLocalNotification: () => {},
+      getUserDefault: () => null,
+      setUserDefault: () => {},
+      removeUserDefault: () => {},
+    };
   },
-  powerMonitor: {
-    on: () => {},
-    off: () => {},
-    once: () => {},
-    getSystemIdleState: () => 'active',
-    getSystemIdleTime: () => 0,
-    isInLowPowerMode: () => false,
+  get powerMonitor() {
+    return {
+      on: () => {},
+      off: () => {},
+      once: () => {},
+      getSystemIdleState: () => 'active',
+      getSystemIdleTime: () => 0,
+      isInLowPowerMode: () => false,
+    };
   },
-  globalShortcut: {
-    register: () => true,
-    unregister: () => {},
-    unregisterAll: () => {},
-    isRegistered: () => false,
+  get globalShortcut() {
+    return {
+      register: () => true,
+      unregister: () => {},
+      unregisterAll: () => {},
+      isRegistered: () => false,
+    };
   },
-  net: {
-    fetch: globalThis.fetch || (() => Promise.reject(new Error('fetch not available'))),
+  get net() {
+    return {
+      fetch: globalThis.fetch || (() => Promise.reject(new Error('fetch not available'))),
+    };
   },
 
   // Constants
-  IPCRenderer: {
-    invoke: () => Promise.resolve(),
-    send: () => {},
-    on: () => () => {},
-    removeListener: () => {},
+  get IPCRenderer() {
+    return {
+      invoke: () => Promise.resolve(),
+      send: () => {},
+      on: () => () => {},
+      removeListener: () => {},
+    };
   },
 };

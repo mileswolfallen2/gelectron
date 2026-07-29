@@ -4,6 +4,8 @@
   <p>A drop-in replacement for Electron powered by Mozilla's Servo engine</p>
 </div>
 
+See the [benchmark results and comparisons](https://gelectron.milesallen.site/benchmarks) for the latest performance data.
+
 ## Why Gelectron?
 
 Electron bundles Chromium — ~150–300 MB per app with large memory overhead. Gelectron uses **Servo** (Mozilla's embeddable browser engine) to share Gecko's CSS engine (Stylo) and GPU compositor (WebRender), producing smaller binaries with lower memory usage.
