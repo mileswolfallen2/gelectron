@@ -1,23 +1,23 @@
 <div align="center">
   <img src="logo.png" alt="Gelectron" width="180">
   <h1>Gelectron</h1>
-  <p>A drop-in replacement for Electron powered by Mozilla's Servo engine</p>
+  <p>A drop-in replacement for Electron using native web views (WKWebView / WebView2 / WebKitGTK) instead of Chromium</p>
 </div>
 
 See the [benchmark results and comparisons](https://gelectron.milesallen.site/benchmarks) for the latest performance data.
 
 ## Why Gelectron?
 
-Electron bundles Chromium — ~150–300 MB per app with large memory overhead. Gelectron uses **Servo** (Mozilla's embeddable browser engine) to share Gecko's CSS engine (Stylo) and GPU compositor (WebRender), producing smaller binaries with lower memory usage.
+Electron bundles Chromium — ~300 MB per app with 500+ MB RSS. Gelectron uses the OS-native web view (WKWebView on macOS, WebView2 on Windows, WebKitGTK on Linux) via the **wry** and **tao** Rust crates, producing smaller binaries with dramatically lower memory usage.
 
 | Feature | Electron | Gelectron |
 |---|---|---|
-| Rendering Engine | Chromium | Servo (Gecko CSS / WebRender GPU) |
+| Rendering Engine | Chromium | Native WebView (WKWebView / WebView2 / WebKitGTK) |
+| Total RSS (process tree) | ~588 MB | ~131 MB |
+| Binary Size | ~300 MB | ~3 MB |
 | Language | C++ / Node.js | Rust / Node.js |
 | API Compatibility | Native | Drop-in replacement |
-| Memory Usage | High | Lower |
-| Binary Size | ~150 MB+ | Smaller (Rust static linking) |
-| Node.js Integration | Built-in | Spawned child process / N-API addon |
+| Node.js Integration | Built-in | Spawned child process or WebView-only |
 | Auto Updater | Built-in | Stub (no-update-safe fallback) |
 
 ## Quick Start
@@ -61,13 +61,20 @@ Gelectron has two execution paths:
 
 ### 1. Native Binary (`gelectron-app` crate)
 
-A standalone Rust binary using **tao** (windowing) and **wry** (WebView). It:
+A standalone Rust binary using **tao** (windowing) and **wry** (WebView). It has two modes:
 
+**Node.js mode** (default):
 1. Reads the target app's `package.json` to find the main script
 2. Generates a Node.js setup script that patches `require('electron')` to point at Gelectron's JS compatibility layer
 3. Spawns Node.js as a child process with piped stdin/stdout
 4. Runs a tao event loop with wry WebView windows
 5. Communicates with Node.js via JSON-line IPC (`create-window`, `load-url`, `ipc-message`, …)
+
+**WebView-only mode** (`--no-node`):
+1. Loads the JS compatibility layer directly inside the WebView
+2. The app's main script runs inside the WKWebView JavaScript context
+3. No Node.js process is spawned — saves ~50 MB RSS
+4. Some APIs (native dialogs, clipboard, screen info) communicate directly from the WebView to the Rust binary via `window.ipc.postMessage()`
 
 ### 2. Node.js Fallback (`cli/gelectron.js`)
 
@@ -99,7 +106,8 @@ When the native binary is not built, the CLI falls back to pure Node.js:
 │   ┌────────────────────────────────────────────┐  │
 │   │  gelectron-app (Rust standalone binary)    │  │
 │   │  tao  · windowing                          │  │
-│   │  wry  · WebView (WebKit on macOS)          │  │
+│   │  wry  · WebView (WKWebView / WebView2 /    │
+│   │           WebKitGTK)                       │  │
 │   └────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────┘
 ```
@@ -217,7 +225,7 @@ gelectron/
 │   │       ├── lib.rs                # N-API entry: init(), get_platform()
 │   │       ├── app.rs               # App lifecycle (native)
 │   │       ├── browser_window.rs    # Window management (native)
-│   │       ├── servo_host.rs        # Servo engine (stub)
+│   │       ├── servo_host.rs        # Servo engine hooks (stub, not in use)
 │   │       ├── event_loop.rs        # Event loop bridge
 │   │       ├── ipc.rs               # IPC bridge
 │   │       ├── protocol.rs          # Custom protocol handler
@@ -343,11 +351,10 @@ gelectron --help              # Show help
 
 ## Known Limitations
 
-- Servo is not yet fully embedded — current WebView uses platform native (WebKit on macOS, WebView2 on Windows, webkit2gtk on Linux)
 - Auto-updater is a no-op stub (returns "no update available")
 - Some Electron APIs are stubs (marked in compatibility table)
-- Single-window only in the standalone binary
 - Preload scripts are injected via WebView init scripts, not true Electron preload isolation
+- Native menu rendering is macOS-only (Windows/Linux fall back to JS-only menus)
 
 ## Roadmap
 
@@ -355,15 +362,15 @@ gelectron --help              # Show help
 - [x] Standalone native binary (tao + wry)
 - [x] Node.js fallback runtime
 - [x] JSON-line IPC between Rust and Node.js
+- [x] WebView-only mode (`--no-node`)
 - [x] `electron-updater` compatibility
-- [ ] Full Servo embedding (replacing wry)
 - [ ] Multi-window support
 - [ ] Custom protocol handlers (`gelectron://`)
 - [ ] DevTools integration
 - [ ] App sandboxing
 - [x] Package/distribution tooling
 - [x] Performance benchmarks vs Electron
-- [ ] Performance good benchmarks vs Electron
+- [ ] Cross-platform verification (Windows, Linux)
 
 ## Contributing
 
