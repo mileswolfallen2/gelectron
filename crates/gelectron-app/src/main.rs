@@ -804,18 +804,26 @@ fn decode_ico_bmp(data: &[u8], raw: Vec<u8>) -> Option<DecodedIcon> {
     if width <= 0 || height == 0 || compression != 0 || (bit_count != 32 && bit_count != 24) {
         return None;
     }
+    let bottom_up = height > 0;
     let mut height = height.unsigned_abs();
-    if bit_count == 24 && height >= 2 && height % 2 == 0 {
-        height /= 2;
-    }
     let width = width as usize;
+    let bpp = bit_count as usize / 8;
+    let stride = (width * bpp + 3) & !3;
+    let and_stride = ((width + 7) / 8 + 3) & !3;
+    let px_start = 40usize;
+    if bottom_up && height >= 2 && height % 2 == 0 {
+        let h2 = height / 2;
+        let h = height as usize;
+        let single_fits = px_start + stride * h <= data.len();
+        let doubled_fits = px_start + stride * h2 as usize + and_stride * h2 as usize <= data.len();
+        if !single_fits && doubled_fits {
+            height = h2;
+        }
+    }
     let height = height as usize;
     if width == 0 || height == 0 || width * height > 4096 * 4096 {
         return None;
     }
-    let bpp = bit_count as usize / 8;
-    let stride = (width * bpp + 3) & !3;
-    let px_start = 40usize;
     let mut rgba = vec![0u8; width * height * 4];
     for y in 0..height {
         let src_row = px_start + (height - 1 - y) * stride;
@@ -1643,6 +1651,50 @@ mod tests {
     }
 
     #[test]
+    fn ico_32bpp_bmp_doubled_height_decode() {
+        let w = 32usize;
+        let mut pixels = vec![[0u8; 4]; w * w];
+        for y in 0..w {
+            for x in 0..w {
+                pixels[y * w + x] = [(x * 8) as u8, (y * 8) as u8, 128, 255];
+            }
+        }
+        let bpp = 4usize;
+        let stride = (w * bpp + 3) & !3;
+        let and_stride = ((w + 7) / 8 + 3) & !3;
+        let mut bmp = vec![0u8; 40];
+        bmp[4..8].copy_from_slice(&(w as i32).to_le_bytes());
+        bmp[8..12].copy_from_slice(&((w as i32) * 2).to_le_bytes());
+        bmp[14..16].copy_from_slice(&32u16.to_le_bytes());
+        for y in (0..w).rev() {
+            for x in 0..w {
+                let p = pixels[y * w + x];
+                bmp.extend_from_slice(&[p[2], p[1], p[0], p[3]]);
+            }
+            bmp.resize(bmp.len() + stride - w * bpp, 0);
+        }
+        bmp.extend(std::iter::repeat(0u8).take(and_stride * w));
+        let mut ico = vec![0u8; 6];
+        ico[2..4].copy_from_slice(&1u16.to_le_bytes());
+        ico.extend_from_slice(&[w as u8, w as u8, 0, 0]);
+        ico.extend_from_slice(&1u16.to_le_bytes());
+        ico.extend_from_slice(&32u16.to_le_bytes());
+        ico.extend_from_slice(&(bmp.len() as u32).to_le_bytes());
+        ico.extend_from_slice(&22u32.to_le_bytes());
+        ico.extend_from_slice(&bmp);
+
+        let icon = decode_ico_icon(&ico).expect("should strip AND mask / doubled height");
+        assert_eq!(icon.width, w as u32);
+        assert_eq!(icon.height, w as u32);
+        for y in 0..w {
+            for x in 0..w {
+                let i = (y * w + x) * 4;
+                assert_eq!(&icon.rgba[i..i + 4], &pixels[y * w + x]);
+            }
+        }
+    }
+
+    #[test]
     fn png_in_ico_decode() {
         let mut png = Vec::new();
         {
@@ -1666,5 +1718,15 @@ mod tests {
         assert_eq!(icon.width, 2);
         assert_eq!(icon.height, 2);
         assert_eq!(&icon.rgba[..4], &[10, 20, 30, 255]);
+    }
+
+    #[test]
+    fn rgba_to_png_round_trip() {
+        let rgba: Vec<u8> = (0..(4 * 4 * 4)).map(|i| (i * 7 % 256) as u8).collect();
+        let png = rgba_to_png(&rgba, 4, 4).expect("should encode PNG");
+        let icon = decode_png_icon(&png).expect("should decode back");
+        assert_eq!(icon.width, 4);
+        assert_eq!(icon.height, 4);
+        assert_eq!(icon.rgba, rgba);
     }
 }
