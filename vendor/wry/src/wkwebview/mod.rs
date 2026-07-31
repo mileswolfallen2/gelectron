@@ -34,7 +34,7 @@ use dpi::{LogicalPosition, LogicalSize};
 use objc2::runtime::Bool;
 use objc2::{
   rc::Retained,
-  runtime::{AnyObject, NSObject, ProtocolObject},
+  runtime::{AnyObject, ProtocolObject},
   ClassType, DeclaredClass,
 };
 #[cfg(target_os = "macos")]
@@ -387,7 +387,7 @@ impl InnerWebView {
       #[cfg(any(debug_assertions, feature = "devtools"))]
       if attributes.devtools {
         let has_inspectable_property: bool =
-          NSObject::respondsToSelector(&webview, objc2::sel!(setInspectable:));
+          objc2::runtime::NSObject::respondsToSelector(&webview, objc2::sel!(setInspectable:));
         if has_inspectable_property {
           webview.setInspectable(true);
         }
@@ -538,7 +538,7 @@ r#"Object.defineProperty(window, 'ipc', {
     }
   }
 
-  pub fn id(&self) -> crate::WebViewId {
+  pub fn id(&self) -> crate::WebViewId<'_> {
     &self.id
   }
 

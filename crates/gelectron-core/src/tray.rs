@@ -62,6 +62,7 @@ pub fn tray_set_pressed_image(_tray_id: u32, _image_json: Option<String>) -> Res
 }
 
 #[napi]
+#[allow(non_snake_case)]
 pub fn tray_setContextMenu(tray_id: u32, menu_id: Option<u32>) -> Result<()> {
     log::info!("Tray {} context menu set to {:?}", tray_id, menu_id);
     Ok(())

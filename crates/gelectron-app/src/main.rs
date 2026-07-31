@@ -951,24 +951,21 @@ fn find_app_icon_file(app_path: &std::path::Path) -> Option<PathBuf> {
 fn apply_dock_icon(icon: &DecodedIcon) {
     #[cfg(target_os = "macos")]
     {
-        use cocoa::appkit::{NSApplication, NSImage};
-        use cocoa::base::{id, nil};
-        use cocoa::foundation::NSData;
+        use objc2::AnyThread;
+        use objc2_app_kit::{NSApplication, NSImage};
+        use objc2_foundation::{MainThreadMarker, NSData};
         let img_bytes = if !icon.rgba.is_empty() {
             rgba_to_png(&icon.rgba, icon.width, icon.height).unwrap_or_else(|| icon.raw.clone())
         } else {
             icon.raw.clone()
         };
-        unsafe {
-            let data = NSData::dataWithBytes_length_(
-                nil,
-                img_bytes.as_ptr() as *const std::ffi::c_void,
-                img_bytes.len() as u64,
-            );
-            let image: id = NSImage::initWithData_(NSImage::alloc(nil), data);
-            if image != nil {
-                let app = NSApplication::sharedApplication(nil);
-                let _: () = app.setApplicationIconImage_(image);
+        if let Some(mtm) = MainThreadMarker::new() {
+            let data = NSData::with_bytes(&img_bytes);
+            if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
+                let app = NSApplication::sharedApplication(mtm);
+                unsafe {
+                    app.setApplicationIconImage(Some(&image));
+                }
             }
         }
     }
@@ -1035,15 +1032,16 @@ fn detect_and_apply_icon(app_path: &std::path::Path, st: &mut AppState) {
 
 #[cfg(target_os = "macos")]
 fn apply_dock_icon_from_path(path: &std::path::Path) {
-    use cocoa::appkit::{NSApplication, NSImage};
-    use cocoa::base::{id, nil};
-    use cocoa::foundation::NSString;
-    unsafe {
-        let ns_path = NSString::alloc(nil).init_str(&path.display().to_string());
-        let image: id = NSImage::initWithContentsOfFile_(NSImage::alloc(nil), ns_path);
-        if image != nil {
-            let app = NSApplication::sharedApplication(nil);
-            let _: () = app.setApplicationIconImage_(image);
+    use objc2::AnyThread;
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::{MainThreadMarker, NSString};
+    if let Some(mtm) = MainThreadMarker::new() {
+        let ns_path = NSString::from_str(&path.display().to_string());
+        if let Some(image) = NSImage::initWithContentsOfFile(NSImage::alloc(), &ns_path) {
+            let app = NSApplication::sharedApplication(mtm);
+            unsafe {
+                app.setApplicationIconImage(Some(&image));
+            }
         }
     }
 }
@@ -1291,7 +1289,6 @@ fn handle_to_rust(
             if let Ok(mut c) = arboard::Clipboard::new() {
                 use base64::Engine;
                 if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data) {
-                    use std::io::Read;
                     let cursor = std::io::Cursor::new(&bytes[..]);
                     let decoder = png::Decoder::new(cursor);
                     if let Ok(mut reader) = decoder.read_info() {
@@ -1589,7 +1586,6 @@ fn handle_to_rust(
                 pair.window.set_maximized(true);
             }
         }
-        _ => {}
     }
 }
 
@@ -1625,7 +1621,7 @@ mod tests {
         bmp[8..12].copy_from_slice(&(w as i32).to_le_bytes());
         bmp[14..16].copy_from_slice(&32u16.to_le_bytes());
         for y in (0..w).rev() {
-            for x in 0..w {
+            for _x in 0..w {
                 let p = pixels[y];
                 bmp.extend_from_slice(&[p[2], p[1], p[0], p[3]]);
             }

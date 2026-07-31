@@ -12,7 +12,6 @@ static IPC_LISTENERS: once_cell::sync::Lazy<Mutex<HashMap<String, Vec<IpcListene
 #[derive(Clone, Debug)]
 struct IpcListener {
     id: u32,
-    channel: String,
 }
 
 static LISTENER_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
@@ -51,7 +50,7 @@ pub fn ipc_main_on(channel: String, _callback: JsFunction) -> Result<i64> {
     listeners
         .entry(channel.clone())
         .or_insert_with(Vec::new)
-        .push(IpcListener { id, channel });
+        .push(IpcListener { id });
     Ok(id as i64)
 }
 
@@ -146,10 +145,7 @@ pub fn ipc_renderer_on(channel: String, _callback: JsFunction) -> Result<i64> {
     listeners
         .entry(format!("renderer:{}", channel))
         .or_insert_with(Vec::new)
-        .push(IpcListener {
-            id,
-            channel: channel.clone(),
-        });
+        .push(IpcListener { id });
     log::debug!("ipcRenderer.on registered for channel: {}", &channel);
     Ok(id as i64)
 }

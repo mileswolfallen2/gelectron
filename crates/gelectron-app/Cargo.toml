@@ -25,4 +25,6 @@ base64 = "0.22"
 url = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.26"
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"

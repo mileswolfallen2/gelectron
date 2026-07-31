@@ -111,12 +111,14 @@ pub fn web_contents_get_session_id(window_id: u32) -> Result<String> {
 }
 
 #[napi]
+#[allow(non_snake_case)]
 pub fn web_contents_set_windowOpenHandler(window_id: u32) -> Result<()> {
     log::debug!("Window {} set window open handler", window_id);
     Ok(())
 }
 
 #[napi]
+#[allow(non_snake_case)]
 pub fn web_contents_set_permissionRequestHandler(window_id: u32) -> Result<()> {
     log::debug!("Window {} set permission request handler", window_id);
     Ok(())
@@ -146,6 +148,7 @@ pub fn web_contents_set_ignore_menu_shortcuts(window_id: u32, ignore: bool) -> R
 }
 
 #[napi]
+#[allow(non_snake_case)]
 pub fn web_contents_setAudioMuted(window_id: u32, muted: bool) -> Result<()> {
     log::debug!("Window {} audio muted={}", window_id, muted);
     Ok(())
