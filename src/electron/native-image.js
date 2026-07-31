@@ -17,12 +17,22 @@ class NativeImage {
     try {
       const fs = require('fs');
       const data = fs.readFileSync(path);
-      // Basic PNG header parsing for dimensions
+      img._data = data;
+      img._isEmpty = false;
       if (data.length > 24 && data[0] === 0x89 && data[1] === 0x50) {
         img._width = data.readUInt32BE(16);
         img._height = data.readUInt32BE(20);
-        img._data = data;
-        img._isEmpty = false;
+      } else if (data.length > 22 && data[0] === 0x00 && data[1] === 0x00 && data[2] === 0x01 && data[3] === 0x00) {
+        img._width = data[6] || 256;
+        img._height = data[7] || 256;
+      } else if (data.length > 12 && data[0] === 0x69 && data[1] === 0x63 && data[2] === 0x6e && data[3] === 0x73) {
+        const type = data.toString('ascii', 8, 12);
+        const c = type.charCodeAt(1);
+        if (c >= 0x30 && c <= 0x39) {
+          img._width = img._height = 1 << (c - 0x30);
+        } else if (type[0] === 'p' && c >= 0x34 && c <= 0x38) {
+          img._width = img._height = 16 << (c - 0x34);
+        }
       }
     } catch (err) {
       console.error(`[gelectron] Failed to load image: ${path}`, err.message);
@@ -109,9 +119,6 @@ class NativeImage {
   isTemplateImage() {
     return this._isTemplate || false;
   }
-
-  toPNG(options) { return this.toPNG(options); }
-  toJPEG(quality) { return this.toJPEG(quality); }
 }
 
 module.exports = NativeImage;

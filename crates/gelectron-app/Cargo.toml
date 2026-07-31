@@ -23,3 +23,6 @@ rfd = "0.15"
 png = "0.18"
 base64 = "0.22"
 url = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"

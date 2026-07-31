@@ -12,6 +12,8 @@
 
 const { EventEmitter } = require('events');
 const path = require('path');
+const { bridge } = require('./native-bridge');
+const NativeImage = require('./native-image');
 
 class App extends EventEmitter {
   constructor() {
@@ -24,7 +26,7 @@ class App extends EventEmitter {
     this._badgeCount = 0;
     this._secureKeyboardEntryEnabled = false;
     this._userAgent = null;
-    this._name = 'Gelectron App';
+    this._name = this._detectAppName();
     this._names = null;
 
     const os = require('os');
@@ -45,7 +47,10 @@ class App extends EventEmitter {
 
     this._commandLine = new Map();
     this._dock = process.platform === 'darwin' ? {
-      setIcon: (icon) => {},
+      setIcon: (icon) => {
+        const b64 = this._iconToBase64Png(icon);
+        if (b64) bridge.setAppIcon(b64);
+      },
       bounce: () => 0,
       cancelBounce: () => {},
       setBadge: () => {},
@@ -70,6 +75,32 @@ class App extends EventEmitter {
         this.emit('ready');
       }
     });
+  }
+
+  _detectAppName() {
+    try {
+      const appDir = process.env.GELECTRON_APP_PATH || process.cwd();
+      const pkg = require(path.join(appDir, 'package.json'));
+      return pkg.productName || pkg.name || 'Gelectron App';
+    } catch (e) {
+      return 'Gelectron App';
+    }
+  }
+
+  _iconToBase64Png(icon) {
+    try {
+      let img = icon;
+      if (typeof icon === 'string') {
+        img = NativeImage.createFromPath(icon);
+      }
+      if (img && typeof img.toPNG === 'function' && !img.isEmpty()) {
+        const png = img.toPNG();
+        if (png && png.length > 0) return png.toString('base64');
+      }
+    } catch (e) {
+      // Ignore invalid icon
+    }
+    return null;
   }
 
   // ─── Properties ──────────────────────────────────────────────

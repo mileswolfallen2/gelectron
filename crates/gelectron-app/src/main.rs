@@ -31,6 +31,8 @@ enum ToRust {
     SetTitle { id: u32, title: String },
     #[serde(rename = "set-size")]
     SetSize { id: u32, width: u32, height: u32 },
+    #[serde(rename = "set-app-icon")]
+    SetAppIcon { icon: String },
     #[serde(rename = "show")]
     Show { id: u32 },
     #[serde(rename = "hide")]
@@ -146,6 +148,8 @@ struct WindowOpts {
     always_on_top: Option<bool>,
     #[serde(default)]
     fullscreen: Option<bool>,
+    #[serde(default)]
+    icon: Option<String>,
 }
 
 struct WindowPair {
@@ -161,6 +165,15 @@ struct AppState {
     node_exited: Arc<AtomicBool>,
     bundle_js: Option<String>,
     response_tx: Option<mpsc::Sender<(String, serde_json::Value)>>,
+    app_icon: Option<DecodedIcon>,
+}
+
+#[derive(Clone)]
+struct DecodedIcon {
+    raw: Vec<u8>,
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
 }
 
 impl AppState {
@@ -172,6 +185,7 @@ impl AppState {
             node_exited,
             bundle_js: None,
             response_tx: None,
+            app_icon: None,
         }
     }
 
@@ -406,6 +420,7 @@ require('{}');
     let mut state = AppState::new(node_exited.clone());
     state.node_stdin = Some(child_stdin);
     state.response_tx = Some(response_tx);
+    detect_and_apply_icon(&app_path, &mut state);
     let state = Rc::new(RefCell::new(state));
     state.borrow_mut().send_to_node(&ToNode::Ready);
 
@@ -503,6 +518,7 @@ window.__gelectron_run_main(`{}`);
     let mut app_state = AppState::new(node_exited.clone());
     app_state.bundle_js = Some(bundle_js.clone());
     app_state.response_tx = Some(response_tx);
+    detect_and_apply_icon(&app_path, &mut app_state);
     let state = Rc::new(RefCell::new(app_state));
 
     event_loop.run(move |event, event_loop_target, control_flow| {
@@ -731,6 +747,299 @@ fn detect_dark_mode() -> bool {
     }
 }
 
+fn decode_png_icon(png_bytes: &[u8]) -> Option<DecodedIcon> {
+    use std::io::Cursor;
+    let cursor = Cursor::new(png_bytes);
+    let decoder = png::Decoder::new(cursor);
+    let mut reader = decoder.read_info().ok()?;
+    let info = reader.info().clone();
+    let width = info.width;
+    let height = info.height;
+    if width == 0 || height == 0 || width * height > 4096 * 4096 {
+        return None;
+    }
+    let mut buf = vec![0; reader.output_buffer_size().unwrap_or(0)];
+    let info = reader.next_frame(&mut buf).ok()?;
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => buf[..(width as usize * height as usize * 4)].to_vec(),
+        png::ColorType::Rgb => {
+            let mut out = Vec::with_capacity(width as usize * height as usize * 4);
+            for px in buf[..(width as usize * height as usize * 3)].chunks_exact(3) {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        }
+        png::ColorType::Grayscale => {
+            let mut out = Vec::with_capacity(width as usize * height as usize * 4);
+            for &g in buf.iter().take(width as usize * height as usize) {
+                out.extend_from_slice(&[g, g, g, 255]);
+            }
+            out
+        }
+        png::ColorType::GrayscaleAlpha => {
+            let mut out = Vec::with_capacity(width as usize * height as usize * 4);
+            for px in buf[..(width as usize * height as usize * 2)].chunks_exact(2) {
+                out.extend_from_slice(&[px[0], px[0], px[0], px[1]]);
+            }
+            out
+        }
+        _ => return None,
+    };
+    Some(DecodedIcon {
+        raw: png_bytes.to_vec(),
+        rgba,
+        width,
+        height,
+    })
+}
+
+fn decode_ico_bmp(data: &[u8], raw: Vec<u8>) -> Option<DecodedIcon> {
+    if data.len() < 40 {
+        return None;
+    }
+    let width = i32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+    let height = i32::from_le_bytes([data[8], data[9], data[10], data[11]]);
+    let bit_count = u16::from_le_bytes([data[14], data[15]]);
+    let compression = u32::from_le_bytes([data[16], data[17], data[18], data[19]]);
+    if width <= 0 || height == 0 || compression != 0 || (bit_count != 32 && bit_count != 24) {
+        return None;
+    }
+    let mut height = height.unsigned_abs();
+    if bit_count == 24 && height >= 2 && height % 2 == 0 {
+        height /= 2;
+    }
+    let width = width as usize;
+    let height = height as usize;
+    if width == 0 || height == 0 || width * height > 4096 * 4096 {
+        return None;
+    }
+    let bpp = bit_count as usize / 8;
+    let stride = (width * bpp + 3) & !3;
+    let px_start = 40usize;
+    let mut rgba = vec![0u8; width * height * 4];
+    for y in 0..height {
+        let src_row = px_start + (height - 1 - y) * stride;
+        if src_row + width * bpp > data.len() {
+            return None;
+        }
+        for x in 0..width {
+            let si = src_row + x * bpp;
+            let di = (y * width + x) * 4;
+            rgba[di] = data[si + 2];
+            rgba[di + 1] = data[si + 1];
+            rgba[di + 2] = data[si];
+            rgba[di + 3] = if bit_count == 32 { data[si + 3] } else { 255 };
+        }
+    }
+    Some(DecodedIcon {
+        raw,
+        rgba,
+        width: width as u32,
+        height: height as u32,
+    })
+}
+
+fn decode_ico_icon(bytes: &[u8]) -> Option<DecodedIcon> {
+    if bytes.len() < 6 {
+        return None;
+    }
+    let count = u16::from_le_bytes([bytes[2], bytes[3]]) as usize;
+    if count == 0 || 6 + 16 * count > bytes.len() {
+        return None;
+    }
+    let mut best: Option<(u64, usize, usize)> = None;
+    for i in 0..count {
+        let e = 6 + 16 * i;
+        let w = if bytes[e] == 0 { 256 } else { bytes[e] as usize };
+        let h = if bytes[e + 1] == 0 { 256 } else { bytes[e + 1] as usize };
+        let size = u32::from_le_bytes([bytes[e + 8], bytes[e + 9], bytes[e + 10], bytes[e + 11]]) as usize;
+        let offset =
+            u32::from_le_bytes([bytes[e + 12], bytes[e + 13], bytes[e + 14], bytes[e + 15]]) as usize;
+        let area = (w * h) as u64;
+        if best.map_or(true, |(a, _, _)| area > a) {
+            best = Some((area, size, offset));
+        }
+    }
+    let (_, size, offset) = best?;
+    if offset + size > bytes.len() {
+        return None;
+    }
+    let data = &bytes[offset..offset + size];
+    if data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+        return decode_png_icon(data).map(|mut ic| {
+            ic.raw = bytes.to_vec();
+            ic
+        });
+    }
+    decode_ico_bmp(data, bytes.to_vec())
+}
+
+fn decode_icon_bytes(bytes: &[u8]) -> Option<DecodedIcon> {
+    if let Some(icon) = decode_png_icon(bytes) {
+        return Some(icon);
+    }
+    if let Some(icon) = decode_ico_icon(bytes) {
+        return Some(icon);
+    }
+    #[cfg(target_os = "macos")]
+    if bytes.starts_with(b"icns") {
+        return Some(DecodedIcon {
+            raw: bytes.to_vec(),
+            rgba: Vec::new(),
+            width: 0,
+            height: 0,
+        });
+    }
+    None
+}
+
+fn decode_base64_icon(base64_str: &str) -> Option<DecodedIcon> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64_str.trim())
+        .ok()?;
+    decode_icon_bytes(&bytes)
+}
+
+fn find_app_icon_file(app_path: &std::path::Path) -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = vec![];
+    for name in [
+        "icon.png",
+        "app.png",
+        "icon.icns",
+        "icon.ico",
+        "app.ico",
+        "assets/icon.png",
+        "assets/app.png",
+        "build/icon.png",
+        "build/icon.icns",
+        "build/icon.ico",
+        "resources/icon.png",
+        "resources/icon.icns",
+        "resources/icon.ico",
+        "public/icon.png",
+        "public/icons/icon.png",
+        "static/icon.png",
+    ] {
+        candidates.push(app_path.join(name));
+    }
+    if let Ok(pkg) = std::fs::read_to_string(app_path.join("package.json")) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&pkg) {
+            if let Some(s) = value.get("icon").and_then(|v| v.as_str()) {
+                candidates.push(app_path.join(s));
+            }
+            if let Some(build) = value.get("build").and_then(|v| v.get("icon")) {
+                if let Some(s) = build.as_str() {
+                    candidates.push(app_path.join(s));
+                }
+            }
+        }
+    }
+    candidates
+        .into_iter()
+        .find(|p| p.exists() && p.is_file())
+}
+
+fn apply_dock_icon(icon: &DecodedIcon) {
+    #[cfg(target_os = "macos")]
+    {
+        use cocoa::appkit::{NSApplication, NSImage};
+        use cocoa::base::{id, nil};
+        use cocoa::foundation::NSData;
+        let img_bytes = if !icon.rgba.is_empty() {
+            rgba_to_png(&icon.rgba, icon.width, icon.height).unwrap_or_else(|| icon.raw.clone())
+        } else {
+            icon.raw.clone()
+        };
+        unsafe {
+            let data = NSData::dataWithBytes_length_(
+                nil,
+                img_bytes.as_ptr() as *const std::ffi::c_void,
+                img_bytes.len() as u64,
+            );
+            let image: id = NSImage::initWithData_(NSImage::alloc(nil), data);
+            if image != nil {
+                let app = NSApplication::sharedApplication(nil);
+                let _: () = app.setApplicationIconImage_(image);
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = icon;
+    }
+}
+
+fn rgba_to_png(rgba: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
+    use std::io::Cursor;
+    let mut out = Cursor::new(Vec::new());
+    let mut encoder = png::Encoder::new(&mut out, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().ok()?;
+    writer.write_image_data(rgba).ok()?;
+    drop(writer);
+    Some(out.into_inner())
+}
+
+fn apply_window_icon(window: &tao::window::Window, icon: &DecodedIcon) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window;
+        let _ = icon;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Ok(tao_icon) = tao::window::Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height) {
+            window.set_window_icon(Some(tao_icon));
+        }
+    }
+}
+
+fn detect_and_apply_icon(app_path: &std::path::Path, st: &mut AppState) {
+    if st.app_icon.is_some() {
+        return;
+    }
+    let Some(icon_path) = find_app_icon_file(app_path) else {
+        return;
+    };
+    let is_icns = icon_path.extension().map(|e| e == "icns").unwrap_or(false);
+    if is_icns {
+        #[cfg(target_os = "macos")]
+        {
+            apply_dock_icon_from_path(&icon_path);
+            log::info!("Loaded app icon from {}", icon_path.display());
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = icon_path;
+        }
+        return;
+    }
+    if let Ok(bytes) = std::fs::read(&icon_path) {
+        if let Some(icon) = decode_icon_bytes(&bytes) {
+            st.app_icon = Some(icon.clone());
+            apply_dock_icon(&icon);
+            log::info!("Loaded app icon from {}", icon_path.display());
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn apply_dock_icon_from_path(path: &std::path::Path) {
+    use cocoa::appkit::{NSApplication, NSImage};
+    use cocoa::base::{id, nil};
+    use cocoa::foundation::NSString;
+    unsafe {
+        let ns_path = NSString::alloc(nil).init_str(&path.display().to_string());
+        let image: id = NSImage::initWithContentsOfFile_(NSImage::alloc(nil), ns_path);
+        if image != nil {
+            let app = NSApplication::sharedApplication(nil);
+            let _: () = app.setApplicationIconImage_(image);
+        }
+    }
+}
+
 fn handle_to_rust(
     msg: ToRust,
     st: &mut AppState,
@@ -793,6 +1102,17 @@ fn handle_to_rust(
                     {
                         Ok(webview) => {
                             let wid = window.id();
+                            if let Some(icon) = options
+                                .icon
+                                .as_deref()
+                                .and_then(decode_base64_icon)
+                            {
+                                st.app_icon = Some(icon.clone());
+                                apply_dock_icon(&icon);
+                                apply_window_icon(&window, &icon);
+                            } else if let Some(icon) = st.app_icon.clone() {
+                                apply_window_icon(&window, &icon);
+                            }
                             st.windows.insert(id, WindowPair { window, webview });
                             st.window_wids.insert(wid, id);
                             log::info!("Window {} ready", id);
@@ -1211,6 +1531,56 @@ fn handle_to_rust(
                 }
             }
         }
+        ToRust::SetTitle { id, title } => {
+            if let Some(pair) = st.windows.get(&id) {
+                pair.window.set_title(&title);
+            }
+        }
+        ToRust::SetSize { id, width, height } => {
+            if let Some(pair) = st.windows.get(&id) {
+                pair.window.set_inner_size(tao::dpi::LogicalSize::new(
+                    width as f64,
+                    height as f64,
+                ));
+            }
+        }
+        ToRust::SetAppIcon { icon } => {
+            if let Some(decoded) = decode_base64_icon(&icon) {
+                st.app_icon = Some(decoded.clone());
+                apply_dock_icon(&decoded);
+                for pair in st.windows.values() {
+                    apply_window_icon(&pair.window, &decoded);
+                }
+                log::info!("Set app icon");
+            } else {
+                log::warn!("SetAppIcon: could not decode icon");
+            }
+        }
+        ToRust::Show { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                pair.window.set_visible(true);
+            }
+        }
+        ToRust::Hide { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                pair.window.set_visible(false);
+            }
+        }
+        ToRust::Focus { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                pair.window.set_focus();
+            }
+        }
+        ToRust::Minimize { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                pair.window.set_minimized(true);
+            }
+        }
+        ToRust::Maximize { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                pair.window.set_maximized(true);
+            }
+        }
         _ => {}
     }
 }
@@ -1227,4 +1597,74 @@ fn which_node() -> Option<String> {
             }
             None
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ico_32bpp_bmp_decode() {
+        let w = 4usize;
+        let pixels: [[u8; 4]; 4] = [
+            [255, 0, 0, 255],
+            [0, 255, 0, 128],
+            [0, 0, 255, 64],
+            [255, 255, 255, 0],
+        ];
+        let mut bmp = vec![0u8; 40];
+        bmp[4..8].copy_from_slice(&(w as i32).to_le_bytes());
+        bmp[8..12].copy_from_slice(&(w as i32).to_le_bytes());
+        bmp[14..16].copy_from_slice(&32u16.to_le_bytes());
+        for y in (0..w).rev() {
+            for x in 0..w {
+                let p = pixels[y];
+                bmp.extend_from_slice(&[p[2], p[1], p[0], p[3]]);
+            }
+        }
+        let mut ico = vec![0u8; 6];
+        ico[2..4].copy_from_slice(&1u16.to_le_bytes());
+        ico.extend_from_slice(&[w as u8, w as u8, 0, 0]);
+        ico.extend_from_slice(&1u16.to_le_bytes());
+        ico.extend_from_slice(&32u16.to_le_bytes());
+        ico.extend_from_slice(&(bmp.len() as u32).to_le_bytes());
+        ico.extend_from_slice(&22u32.to_le_bytes());
+        ico.extend_from_slice(&bmp);
+
+        let icon = decode_ico_icon(&ico).expect("should decode 32bpp BMP-in-ICO");
+        assert_eq!(icon.width, w as u32);
+        assert_eq!(icon.height, w as u32);
+        for y in 0..w {
+            for x in 0..w {
+                let i = (y * w + x) * 4;
+                assert_eq!(&icon.rgba[i..i + 4], &pixels[y]);
+            }
+        }
+    }
+
+    #[test]
+    fn png_in_ico_decode() {
+        let mut png = Vec::new();
+        {
+            let mut enc = png::Encoder::new(&mut png, 2, 2);
+            enc.set_color(png::ColorType::Rgba);
+            enc.set_depth(png::BitDepth::Eight);
+            let mut w = enc.write_header().unwrap();
+            w.write_image_data(&[10, 20, 30, 255, 40, 50, 60, 255, 70, 80, 90, 255, 100, 110, 120, 255])
+                .unwrap();
+        }
+        let mut ico = vec![0u8; 6];
+        ico[2..4].copy_from_slice(&1u16.to_le_bytes());
+        ico.extend_from_slice(&[0, 0, 0, 0]);
+        ico.extend_from_slice(&1u16.to_le_bytes());
+        ico.extend_from_slice(&32u16.to_le_bytes());
+        ico.extend_from_slice(&(png.len() as u32).to_le_bytes());
+        ico.extend_from_slice(&22u32.to_le_bytes());
+        ico.extend_from_slice(&png);
+
+        let icon = decode_ico_icon(&ico).expect("should decode PNG-in-ICO");
+        assert_eq!(icon.width, 2);
+        assert_eq!(icon.height, 2);
+        assert_eq!(&icon.rgba[..4], &[10, 20, 30, 255]);
+    }
 }

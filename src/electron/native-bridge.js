@@ -152,6 +152,10 @@ class NativeBridge extends EventEmitter {
   quit() {
     this._send({ type: 'quit' });
   }
+
+  setAppIcon(base64Png) {
+    this._send({ type: 'set-app-icon', icon: base64Png });
+  }
 }
 
 const bridge = new NativeBridge();

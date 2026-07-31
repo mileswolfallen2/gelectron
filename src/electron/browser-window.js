@@ -8,6 +8,7 @@ const { EventEmitter } = require('events');
 const path = require('path');
 const { bridge, isNative } = require('./native-bridge');
 const { app } = require('./app');
+const NativeImage = require('./native-image');
 
 class WebContents extends EventEmitter {
   constructor(id) {
@@ -219,6 +220,7 @@ class BrowserWindow extends EventEmitter {
         resizable: this._options.resizable,
         alwaysOnTop: this._options.alwaysOnTop,
         fullscreen: this._options.fullscreen,
+        icon: this._iconToBase64Png(this._options.icon),
       });
     }
 
@@ -230,6 +232,23 @@ class BrowserWindow extends EventEmitter {
         }
       });
     }
+  }
+
+  _iconToBase64Png(icon) {
+    if (!icon) return null;
+    try {
+      let img = icon;
+      if (typeof icon === 'string') {
+        img = NativeImage.createFromPath(icon);
+      }
+      if (img && typeof img.toPNG === 'function' && !img.isEmpty()) {
+        const png = img.toPNG();
+        if (png && png.length > 0) return png.toString('base64');
+      }
+    } catch (e) {
+      // Ignore invalid icon
+    }
+    return null;
   }
 
   static fromWebContents(webContents) {
@@ -270,7 +289,6 @@ class BrowserWindow extends EventEmitter {
     if (isNative) bridge.showWindow(this.id);
     this.emit('show');
   }
-
   hide() {
     if (this._isDestroyed) return;
     this._isVisible = false;
