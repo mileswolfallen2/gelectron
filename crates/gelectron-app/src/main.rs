@@ -166,6 +166,7 @@ struct AppState {
     bundle_js: Option<String>,
     response_tx: Option<mpsc::Sender<(String, serde_json::Value)>>,
     app_icon: Option<DecodedIcon>,
+    app_menu: Option<muda::Menu>,
 }
 
 #[derive(Clone)]
@@ -186,6 +187,7 @@ impl AppState {
             bundle_js: None,
             response_tx: None,
             app_icon: None,
+            app_menu: None,
         }
     }
 
@@ -423,6 +425,11 @@ require('{}');
     detect_and_apply_icon(&app_path, &mut state);
     let state = Rc::new(RefCell::new(state));
     state.borrow_mut().send_to_node(&ToNode::Ready);
+    #[cfg(target_os = "macos")]
+    {
+        state.borrow_mut().app_menu =
+            install_default_app_menu(&default_app_name(&app_path));
+    }
 
     event_loop.run(move |event, event_loop_target, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -520,6 +527,11 @@ window.__gelectron_run_main(`{}`);
     app_state.response_tx = Some(response_tx);
     detect_and_apply_icon(&app_path, &mut app_state);
     let state = Rc::new(RefCell::new(app_state));
+    #[cfg(target_os = "macos")]
+    {
+        state.borrow_mut().app_menu =
+            install_default_app_menu(&default_app_name(&app_path));
+    }
 
     event_loop.run(move |event, event_loop_target, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -673,6 +685,58 @@ fn build_muda_menu(
     Some(menu)
 }
 
+fn menu_role_predefined(role: &str) -> Option<muda::PredefinedMenuItem> {
+    use muda::PredefinedMenuItem as P;
+    match role {
+        "copy" => Some(P::copy(None)),
+        "cut" => Some(P::cut(None)),
+        "paste" => Some(P::paste(None)),
+        "selectAll" => Some(P::select_all(None)),
+        "undo" => Some(P::undo(None)),
+        "redo" => Some(P::redo(None)),
+        "minimize" => Some(P::minimize(None)),
+        "zoom" | "maximize" => Some(P::maximize(None)),
+        "togglefullscreen" | "fullscreen" => Some(P::fullscreen(None)),
+        "hide" => Some(P::hide(None)),
+        "hideOthers" => Some(P::hide_others(None)),
+        "unhide" => Some(P::show_all(None)),
+        "close" => Some(P::close_window(None)),
+        "quit" => Some(P::quit(None)),
+        "front" => Some(P::bring_all_to_front(None)),
+        "services" => Some(P::services(None)),
+        _ => None,
+    }
+}
+
+fn menu_item_from_json(item: &serde_json::Value) -> Option<muda::MenuItem> {
+    use std::str::FromStr;
+    let label = item.get("label").and_then(|v| v.as_str()).unwrap_or("");
+    let enabled = item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+    let accelerator = item.get("accelerator").and_then(|v| v.as_str()).unwrap_or("");
+    let mi = muda::MenuItem::new(label, true, None);
+    if !enabled {
+        mi.set_enabled(false);
+    }
+    if !accelerator.is_empty() {
+        if let Ok(accel) = muda::accelerator::Accelerator::from_str(accelerator) {
+            let _ = mi.set_accelerator(Some(accel));
+        }
+    }
+    Some(mi)
+}
+
+// The compat layer serializes a submenu either as a bare array or as an
+// object with an `items` array. Normalize to the array form.
+fn submenu_items(value: &serde_json::Value) -> Option<&serde_json::Value> {
+    if value.as_array().is_some() {
+        Some(value)
+    } else {
+        value
+            .get("items")
+            .filter(|items| items.as_array().is_some())
+    }
+}
+
 fn build_menu_items_inner(parent: &muda::Menu, items: &serde_json::Value) {
     let items_arr = match items.as_array() {
         Some(a) => a,
@@ -682,26 +746,33 @@ fn build_menu_items_inner(parent: &muda::Menu, items: &serde_json::Value) {
     for item in items_arr {
         let label = item.get("label").and_then(|v| v.as_str()).unwrap_or("");
         let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("normal");
-        let enabled = item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+        let role = item.get("role").and_then(|v| v.as_str()).unwrap_or("");
 
         if item_type == "separator" {
             let _ = parent.append(&muda::PredefinedMenuItem::separator());
             continue;
         }
 
-        if item_type == "submenu" {
+        if !role.is_empty() {
+            if let Some(predefined) = menu_role_predefined(role) {
+                let _ = parent.append(&predefined);
+                continue;
+            }
+            // Fall through for roles without a muda predefined equivalent
+        }
+
+        if item_type == "submenu" || item.get("submenu").is_some() {
             let submenu = muda::Submenu::new(label, true);
-            if let Some(sub_items) = item.get("submenu") {
+            if let Some(sub_items) = item.get("submenu").and_then(submenu_items) {
                 if let Some(sub_arr) = sub_items.as_array() {
                     for sub_item in sub_arr {
-                        let sub_label = sub_item.get("label").and_then(|v| v.as_str()).unwrap_or("");
                         let sub_type = sub_item.get("type").and_then(|v| v.as_str()).unwrap_or("normal");
-                        let sub_enabled = sub_item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+                        let sub_role = sub_item.get("role").and_then(|v| v.as_str()).unwrap_or("");
                         if sub_type == "separator" {
                             let _ = submenu.append(&muda::PredefinedMenuItem::separator());
-                        } else {
-                            let mi = muda::MenuItem::new(sub_label, true, None);
-                            if !sub_enabled { mi.set_enabled(false); }
+                        } else if let Some(predefined) = menu_role_predefined(sub_role) {
+                            let _ = submenu.append(&predefined);
+                        } else if let Some(mi) = menu_item_from_json(sub_item) {
                             let _ = submenu.append(&mi);
                         }
                     }
@@ -711,12 +782,94 @@ fn build_menu_items_inner(parent: &muda::Menu, items: &serde_json::Value) {
             continue;
         }
 
-        let menu_item = muda::MenuItem::new(label, true, None);
-        if !enabled {
-            menu_item.set_enabled(false);
+        if let Some(mi) = menu_item_from_json(item) {
+            let _ = parent.append(&mi);
         }
-        let _ = parent.append(&menu_item);
     }
+}
+
+fn menu_items_have_edit_roles(items: &serde_json::Value) -> bool {
+    let arr = match items.as_array() {
+        Some(a) => a,
+        None => return false,
+    };
+    for item in arr {
+        if let Some(role) = item.get("role").and_then(|v| v.as_str()) {
+            if matches!(role, "copy" | "paste" | "cut" | "undo" | "redo" | "selectAll") {
+                return true;
+            }
+        }
+        if let Some(sub) = item.get("submenu").and_then(submenu_items) {
+            if menu_items_have_edit_roles(sub) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn build_edit_submenu() -> muda::Submenu {
+    use muda::PredefinedMenuItem as P;
+    let edit = muda::Submenu::new("Edit", true);
+    let _ = edit.append(&P::undo(None));
+    let _ = edit.append(&P::redo(None));
+    let _ = edit.append(&P::separator());
+    let _ = edit.append(&P::cut(None));
+    let _ = edit.append(&P::copy(None));
+    let _ = edit.append(&P::paste(None));
+    let _ = edit.append(&P::select_all(None));
+    edit
+}
+
+fn build_application_menu(menu_json: &serde_json::Value) -> Option<muda::Menu> {
+    let menu = match build_muda_menu(menu_json) {
+        Some(m) => m,
+        None => return None,
+    };
+    let has_edit = menu_json
+        .get("items")
+        .map(menu_items_have_edit_roles)
+        .unwrap_or(false);
+    if !has_edit {
+        let _ = menu.append(&build_edit_submenu());
+    }
+    Some(menu)
+}
+
+#[cfg(target_os = "macos")]
+fn default_app_name(app_path: &std::path::Path) -> String {
+    app_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Gelectron".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn install_default_app_menu(app_name: &str) -> Option<muda::Menu> {
+    use muda::PredefinedMenuItem as P;
+    let menu = muda::Menu::new();
+
+    let app_sub = muda::Submenu::new(app_name, true);
+    let _ = app_sub.append(&P::about(None, None));
+    let _ = app_sub.append(&P::separator());
+    let _ = app_sub.append(&P::hide(None));
+    let _ = app_sub.append(&P::hide_others(None));
+    let _ = app_sub.append(&P::show_all(None));
+    let _ = app_sub.append(&P::separator());
+    let _ = app_sub.append(&P::quit(None));
+    let _ = menu.append(&app_sub);
+
+    let _ = menu.append(&build_edit_submenu());
+
+    let window_sub = muda::Submenu::new("Window", true);
+    let _ = window_sub.append(&P::minimize(None));
+    let _ = window_sub.append(&P::maximize(None));
+    let _ = window_sub.append(&P::close_window(None));
+    let _ = menu.append(&window_sub);
+
+    menu.init_for_nsapp();
+    log::info!("Default application menu installed (universal clipboard support)");
+    Some(menu)
 }
 
 fn detect_dark_mode() -> bool {
@@ -750,7 +903,12 @@ fn detect_dark_mode() -> bool {
 fn decode_png_icon(png_bytes: &[u8]) -> Option<DecodedIcon> {
     use std::io::Cursor;
     let cursor = Cursor::new(png_bytes);
-    let decoder = png::Decoder::new(cursor);
+    let mut decoder = png::Decoder::new(cursor);
+    // Normalize 16-bit channels to 8-bit and expand indexed/grayscale to RGBA
+    // so downstream code can assume 8-bit RGBA bytes.
+    decoder.set_transformations(
+        png::Transformations::EXPAND | png::Transformations::STRIP_16,
+    );
     let mut reader = decoder.read_info().ok()?;
     let info = reader.info().clone();
     let width = info.width;
@@ -975,6 +1133,7 @@ fn apply_dock_icon(icon: &DecodedIcon) {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn rgba_to_png(rgba: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
     use std::io::Cursor;
     let mut out = Cursor::new(Vec::new());
@@ -1222,20 +1381,24 @@ fn handle_to_rust(
         }
         ToRust::SetApplicationMenu { menu } => {
             log::info!("Setting application menu");
-            if let Some(muda_menu) = build_muda_menu(&menu) {
+            if let Some(muda_menu) = build_application_menu(&menu) {
                 #[cfg(target_os = "macos")]
                 {
                     muda_menu.init_for_nsapp();
                 }
+                // Keep the menu alive for the lifetime of the app: AppKit stores
+                // raw pointers into the muda menu items, so dropping it here would
+                // leave dangling pointers that crash when items are activated.
+                st.app_menu = Some(muda_menu);
                 log::info!("Application menu set");
             }
         }
         ToRust::PopupMenu { menu, x: _x, y: _y } => {
             log::info!("Popup menu requested");
-            if let Some(muda_menu) = build_muda_menu(&menu) {
+            if let Some(_muda_menu) = build_muda_menu(&menu) {
                 #[cfg(target_os = "macos")]
                 {
-                    muda_menu.init_for_nsapp();
+                    _muda_menu.init_for_nsapp();
                 }
             }
         }
@@ -1716,6 +1879,7 @@ mod tests {
         assert_eq!(&icon.rgba[..4], &[10, 20, 30, 255]);
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn rgba_to_png_round_trip() {
         let rgba: Vec<u8> = (0..(4 * 4 * 4)).map(|i| (i * 7 % 256) as u8).collect();

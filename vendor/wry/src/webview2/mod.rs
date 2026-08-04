@@ -466,7 +466,10 @@ impl InnerWebView {
 
             let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
             args.PermissionKind(&mut kind)?;
-            if kind == COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ {
+            if kind == COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ
+              || kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE
+              || kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA
+            {
               args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)?;
             }
 

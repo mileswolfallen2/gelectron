@@ -155,12 +155,17 @@ function copyDirSync(src, dest, exclude) {
   }
 }
 
-function generateInfoPlist(name, version, exeName) {
+function generateInfoPlist(name, version, exeName, iconName) {
+  const iconKey = iconName
+    ? `  <key>CFBundleIconFile</key>
+  <string>${iconName}</string>
+`
+    : '';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleDisplayName</key>
+${iconKey}  <key>CFBundleDisplayName</key>
   <string>${name}</string>
   <key>CFBundleExecutable</key>
   <string>${exeName}</string>
@@ -178,8 +183,80 @@ function generateInfoPlist(name, version, exeName) {
   <true/>
   <key>NSRequiresAquaSystemAppearance</key>
   <false/>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>${name} needs microphone access for voice input and audio recording.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>${name} needs camera access for video capture and screenshots.</string>
 </dict>
 </plist>`;
+}
+
+function generateEntitlements() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.device.camera</key>
+  <true/>
+</dict>
+</plist>`;
+}
+
+// Convert a PNG into a .icns using macOS built-in tools (sips + iconutil).
+// Returns the path to the generated .icns, or null on failure.
+function generateIcns(pngPath, outPath) {
+  if (process.platform !== 'darwin') return null;
+  const iconsetDir = outPath + '.iconset';
+  fs.rmSync(iconsetDir, { recursive: true, force: true });
+  fs.mkdirSync(iconsetDir, { recursive: true });
+
+  // sips keeps 16-bit depth on large PNGs, which macOS icon rendering handles
+  // poorly (messed-up logos). Downconvert to 8-bit first when possible.
+  let source = pngPath;
+  const tmp8bit = outPath + '.8bit.png';
+  try {
+    execSync(
+      `python3 -c "from PIL import Image; im=Image.open('${pngPath}').convert('RGBA'); im.save('${tmp8bit}')"`,
+      { stdio: 'pipe' },
+    );
+    source = tmp8bit;
+  } catch (e) {
+    try {
+      fs.rmSync(tmp8bit, { force: true });
+    } catch (_) {}
+  }
+
+  const sizes = [
+    ['icon_16x16.png', 16],
+    ['icon_16x16@2x.png', 32],
+    ['icon_32x32.png', 32],
+    ['icon_32x32@2x.png', 64],
+    ['icon_128x128.png', 128],
+    ['icon_128x128@2x.png', 256],
+    ['icon_256x256.png', 256],
+    ['icon_256x256@2x.png', 512],
+    ['icon_512x512.png', 512],
+    ['icon_512x512@2x.png', 1024],
+  ];
+
+  try {
+    for (const [name, size] of sizes) {
+      execSync(`sips -z ${size} ${size} "${source}" --out "${path.join(iconsetDir, name)}"`, {
+        stdio: 'pipe',
+      });
+    }
+    execSync(`iconutil -c icns "${iconsetDir}" -o "${outPath}"`, { stdio: 'pipe' });
+    return outPath;
+  } catch (e) {
+    return null;
+  } finally {
+    fs.rmSync(iconsetDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(tmp8bit, { force: true });
+    } catch (_) {}
+  }
 }
 
 function generateWrapperScript(exeName, nodePath) {
@@ -275,11 +352,13 @@ async function packageMac(appDir, outDir, name, version, gelectronBin, nodeDir, 
     copyDirSync(libDir, path.join(macosDir, 'lib'), ['node_modules', 'include', 'pkgconfig']);
   }
 
-  // Copy node_modules
+  // Copy node_modules next to the app source (Resources/app), where Node
+  // resolves them. Keep them out of MacOS/: codesign treats that dir as
+  // executable code and chokes on some libs (e.g. sharp's libvips).
   const nodeModulesDir = path.join(appDir, 'node_modules');
   if (fs.existsSync(nodeModulesDir)) {
     log('  Copying node_modules...');
-    copyDirSync(nodeModulesDir, path.join(macosDir, 'node_modules'), ['.cache', '.bin', 'electron']);
+    copyDirSync(nodeModulesDir, path.join(appResources, 'node_modules'), ['.cache', '.bin', 'electron']);
   }
 
   // Copy src/electron compat layer
@@ -303,15 +382,32 @@ exec "$DIR/gelectron-bin" "$@"
   fs.writeFileSync(path.join(macosDir, exeName), wrapper, { mode: 0o755 });
 
   // Generate Info.plist
-  fs.writeFileSync(path.join(contentsDir, 'Info.plist'), generateInfoPlist(name, version, exeName));
+  const iconSource = path.join(appResources, 'icon.png');
+  let iconName = null;
+  if (fs.existsSync(iconSource)) {
+    const icnsPath = path.join(resourcesDir, 'AppIcon.icns');
+    if (generateIcns(iconSource, icnsPath)) {
+      iconName = 'AppIcon';
+      log('  Generated app icon (AppIcon.icns)');
+    }
+  }
+  fs.writeFileSync(path.join(contentsDir, 'Info.plist'), generateInfoPlist(name, version, exeName, iconName));
 
-  // Ad-hoc sign so the app runs on other Macs
+  // Generate entitlements (microphone/camera access for webview media capture)
+  const entitlementsPath = path.join(contentsDir, 'entitlements.plist');
+  fs.writeFileSync(entitlementsPath, generateEntitlements());
+
+  // Ad-hoc sign so the app runs on other Macs.
+  // --deep signs gelectron-bin (the process that hosts the webview and
+  // captures audio) with the mic/camera entitlements too. Safe now that
+  // node_modules lives in Resources/app, not MacOS/.
   log('  Signing app...');
   try {
-    execSync(`codesign --force --deep --sign - "${appBundle}"`, { stdio: 'pipe' });
-    log('  Signed (ad-hoc)');
+    execSync(`codesign --force --deep --sign - --entitlements "${entitlementsPath}" "${appBundle}"`, { stdio: 'pipe' });
+    log('  Signed (ad-hoc, mic/camera entitlements)');
   } catch (e) {
     log('  Warning: codesign failed (app may be blocked on other Macs)');
+    log(`  ${e.stderr ? e.stderr.toString().trim().split('\n').pop() : e.message}`);
   }
 
   log(`  Created: ${appBundle}`);
@@ -411,16 +507,17 @@ exec "$DIR/${exeName}" "$@"
 const args = process.argv.slice(2);
 const opts = { dir: '.', platform: process.platform, arch: process.arch };
 
-// First non-flag argument is the app directory
+// First non-flag argument is the app directory (unless --dir/-d was already given)
 let positionalIdx = 0;
+let dirSet = false;
 for (let i = 0; i < args.length; i++) {
-  if (!args[i].startsWith('-') && positionalIdx === 0) {
+  if (!args[i].startsWith('-') && positionalIdx === 0 && !dirSet) {
     opts.dir = args[i];
     positionalIdx++;
     continue;
   }
   switch (args[i]) {
-    case '--dir': case '-d': opts.dir = args[++i]; break;
+    case '--dir': case '-d': opts.dir = args[++i]; dirSet = true; break;
     case '--name': case '-n': opts.name = args[++i]; break;
     case '--out': case '-o': opts.out = args[++i]; break;
     case '--platform': case '-p': opts.platform = args[++i]; break;

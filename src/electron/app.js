@@ -12,6 +12,7 @@
 
 const { EventEmitter } = require('events');
 const path = require('path');
+const fs = require('fs');
 const { bridge } = require('./native-bridge');
 const NativeImage = require('./native-image');
 
@@ -46,6 +47,17 @@ class App extends EventEmitter {
     };
 
     this._commandLine = new Map();
+
+    // Real Electron creates these dirs at startup; mirror that so apps can
+    // chdir/write into userData immediately.
+    for (const p of [this._paths.userData, this._paths.crashDumps, this._paths.logs]) {
+      try {
+        fs.mkdirSync(p, { recursive: true });
+      } catch (e) {
+        // Non-fatal: some paths may not be creatable in odd environments
+      }
+    }
+
     this._dock = process.platform === 'darwin' ? {
       setIcon: (icon) => {
         const b64 = this._iconToBase64Png(icon);
