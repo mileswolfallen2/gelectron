@@ -246,6 +246,24 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let no_node = args.iter().any(|a| a == "--no-node");
 
+    if args.iter().any(|a| a == "--version" || a == "-v") {
+        println!("gelectron v{}", env!("CARGO_PKG_VERSION"));
+        std::process::exit(0);
+    }
+
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!(
+            "gelectron v{} - Firefox-engine Electron alternative\n\n\
+             Usage:\n  \
+             \x20 gelectron <path-to-app>       Run an Electron app\n  \
+             \x20 gelectron --no-node           WebView-only mode (no Node.js)\n  \
+             \x20 gelectron --version           Print version\n  \
+             \x20 gelectron --help              Show this help",
+            env!("CARGO_PKG_VERSION")
+        );
+        std::process::exit(0);
+    }
+
     // If no args, try to auto-detect app path for packaged apps
     let raw_app_path = if args.iter().skip(1).find(|a| !a.starts_with('-')).is_some() {
         args.iter().skip(1).find(|a| !a.starts_with('-')).unwrap().clone()

@@ -38,7 +38,7 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 echo "==> Building gelectron (release)..."
-cargo build --release -p gelectron
+cargo build --release --manifest-path "$REPO_DIR/Cargo.toml" -p gelectron
 BIN="$REPO_DIR/target/release/gelectron"
 if [[ ! -f "$BIN" ]]; then
   echo "error: build finished but $BIN is missing" >&2
