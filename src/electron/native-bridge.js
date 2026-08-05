@@ -153,6 +153,10 @@ class NativeBridge extends EventEmitter {
     this._send({ type: 'quit' });
   }
 
+  relaunch(execPath, args) {
+    this._send({ type: 'relaunch', exec_path: execPath, args: args || [] });
+  }
+
   setAppIcon(base64Png) {
     this._send({ type: 'set-app-icon', icon: base64Png });
   }

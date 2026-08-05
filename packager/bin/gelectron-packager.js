@@ -3,6 +3,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { execSync } = require('child_process');
 const https = require('https');
 const http = require('http');
@@ -266,6 +267,93 @@ exec "$DIR/${exeName}" "$@"
 `;
 }
 
+function sha512File(file) {
+  return crypto.createHash('sha512').update(fs.readFileSync(file)).digest('hex');
+}
+
+// Launcher preamble shared by the macOS and Linux bash launchers. It exports
+// the update metadata the autoUpdater reads, and applies any staged update
+// (atomic rename of each payload item) before starting the engine.
+function bashLauncher(exeName, engineName) {
+  return `#!/bin/bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+export PATH="$DIR:$PATH"
+export GELECTRON_NATIVE=1
+export GELECTRON_PACKAGED=1
+export GELECTRON_ENGINE=${engineName}
+export GELECTRON_LAUNCHER="$DIR/${exeName}"
+if [ -f "$DIR/.update/apply.sh" ]; then
+  if sh "$DIR/.update/apply.sh"; then
+    rm -f "$DIR/.update/apply.sh" "$DIR/.update/pending.json"
+  fi
+fi
+exec "$DIR/${engineName}" "$@"
+`;
+}
+
+// Build the auto-update artifacts: a `payload/` staging dir (full bundle) tarballed
+// next to a `latest.yml` manifest with version, path and sha512. Upload both to a
+// GitHub release and point autoUpdater.setFeedURL at latest.yml.
+function makeUpdateArtifacts(outDir, name, version, platform, arch) {
+  const exeName = name.replace(/[^a-zA-Z0-9]/g, '');
+
+  let appDir, compatDir, nodeFile, engineFile, libDir;
+  if (platform === 'darwin') {
+    const macos = path.join(outDir, `${name}.app`, 'Contents', 'MacOS');
+    appDir = path.join(outDir, `${name}.app`, 'Contents', 'Resources', 'app');
+    compatDir = path.join(macos, 'compat');
+    nodeFile = path.join(macos, 'node');
+    engineFile = path.join(macos, 'gelectron-bin');
+    libDir = path.join(macos, 'lib');
+  } else if (platform === 'win32') {
+    appDir = path.join(outDir, 'app');
+    compatDir = path.join(outDir, 'compat');
+    nodeFile = path.join(outDir, 'node.exe');
+    engineFile = path.join(outDir, `${exeName}.exe`);
+    libDir = null;
+  } else {
+    appDir = path.join(outDir, 'app');
+    compatDir = path.join(outDir, 'compat');
+    nodeFile = path.join(outDir, 'node');
+    engineFile = path.join(outDir, 'gelectron-bin');
+    libDir = null;
+  }
+
+  if (!fs.existsSync(engineFile)) die(`engine binary not found: ${engineFile}`);
+
+  const staging = path.join(outDir, '.update-stage');
+  const payloadDir = path.join(staging, 'payload');
+  fs.rmSync(staging, { recursive: true, force: true });
+  fs.mkdirSync(payloadDir, { recursive: true });
+
+  const copyFile = (src, dest) => {
+    fs.copyFileSync(src, dest);
+    fs.chmodSync(dest, 0o755);
+  };
+
+  copyFile(engineFile, path.join(payloadDir, 'engine'));
+  if (fs.existsSync(nodeFile)) copyFile(nodeFile, path.join(payloadDir, 'node'));
+  if (fs.existsSync(compatDir)) copyDirSync(compatDir, path.join(payloadDir, 'compat'), []);
+  if (fs.existsSync(appDir)) copyDirSync(appDir, path.join(payloadDir, 'app'), []);
+  if (libDir && fs.existsSync(libDir)) copyDirSync(libDir, path.join(payloadDir, 'lib'), []);
+
+  const updateDir = path.join(outDir, 'update');
+  fs.mkdirSync(updateDir, { recursive: true });
+  const archiveName = `${exeName}-${version}-${platform}-${arch}.tar.gz`;
+  const archivePath = path.join(updateDir, archiveName);
+
+  log('  Building update archive...');
+  execSync(`tar -czf "${archivePath}" payload`, { cwd: staging, stdio: 'pipe' });
+  fs.rmSync(staging, { recursive: true, force: true });
+
+  const sha512 = sha512File(archivePath);
+  fs.writeFileSync(
+    path.join(updateDir, 'latest.yml'),
+    `version: ${version}\npath: ${archiveName}\nsha512: ${sha512}\n`,
+  );
+  log(`  Update artifacts: update/${archiveName} (sha512 ${sha512.slice(0, 12)}…)`);
+}
+
 function generateLinuxDesktop(name, exeName) {
   return `[Desktop Entry]
 Name=${name}
@@ -322,6 +410,8 @@ async function packageApp(opts) {
     await packageLinux(appDir, outDir, name, version, gelectronBin, nodeDir, opts);
   }
 
+  makeUpdateArtifacts(outDir, name, version, platform, arch);
+
   log(`\n  ✓ Packaged to ${outDir}\n`);
 }
 
@@ -372,14 +462,9 @@ async function packageMac(appDir, outDir, name, version, gelectronBin, nodeDir, 
   const excludeDirs = ['node_modules', '.gelectron-cache', '.git', 'target'];
   copyDirSync(appDir, appResources, excludeDirs);
 
-  // Generate bash launcher (CFBundleExecutable) — sets PATH so gelectron-bin finds node
-  const wrapper = `#!/bin/bash
-DIR="$(cd "$(dirname "$0")" && pwd)"
-export PATH="$DIR:$PATH"
-export GELECTRON_NATIVE=1
-exec "$DIR/gelectron-bin" "$@"
-`;
-  fs.writeFileSync(path.join(macosDir, exeName), wrapper, { mode: 0o755 });
+  // Generate bash launcher (CFBundleExecutable) — sets PATH so gelectron-bin
+  // finds node, exports update metadata, and applies any pending update.
+  fs.writeFileSync(path.join(macosDir, exeName), bashLauncher(exeName, 'gelectron-bin'), { mode: 0o755 });
 
   // Generate Info.plist
   const iconSource = path.join(appResources, 'icon.png');
@@ -439,11 +524,28 @@ async function packageWindows(appDir, outDir, name, version, gelectronBin, nodeD
   log('  Copying app source...');
   copyDirSync(appDir, path.join(outDir, 'app'), ['node_modules', '.gelectron-cache', '.git', 'target']);
 
-  // Generate VBScript launcher (no terminal window)
+  // Generate VBScript launcher (no terminal window). Applies any staged update
+  // before starting the engine and exports the update metadata.
   const vbs = `Set WshShell = CreateObject("WScript.Shell")
-WshShell.CurrentDirectory = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
-WshShell.Environment("Process")("PATH") = WshShell.CurrentDirectory & ";" & WshShell.Environment("Process")("PATH")
-WshShell.Run """" & WshShell.CurrentDirectory & "\\${exeName}.exe""", 1, False
+Set objFSO = CreateObject("Scripting.FileSystemObject")
+dir = objFSO.GetParentFolderName(WScript.ScriptFullName)
+WshShell.CurrentDirectory = dir
+applyCmd = dir & "\\.update\\apply.cmd"
+If objFSO.FileExists(applyCmd) Then
+  rc = WshShell.Run("cmd /c " & Chr(34) & applyCmd & Chr(34), 0, True)
+  If rc = 0 Then
+    On Error Resume Next
+    objFSO.DeleteFile applyCmd
+    objFSO.DeleteFile dir & "\\.update\\pending.json"
+    On Error GoTo 0
+  End If
+End If
+WshShell.Environment("Process")("PATH") = dir & ";" & WshShell.Environment("Process")("PATH")
+WshShell.Environment("Process")("GELECTRON_NATIVE") = "1"
+WshShell.Environment("Process")("GELECTRON_PACKAGED") = "1"
+WshShell.Environment("Process")("GELECTRON_ENGINE") = "${exeName}.exe"
+WshShell.Environment("Process")("GELECTRON_LAUNCHER") = dir & "\\${exeName}.vbs"
+WshShell.Run """" & dir & "\\${exeName}.exe""", 1, False
 `;
   fs.writeFileSync(path.join(outDir, `${exeName}.vbs`), vbs);
 
@@ -451,6 +553,17 @@ WshShell.Run """" & WshShell.CurrentDirectory & "\\${exeName}.exe""", 1, False
   const bat = `@echo off
 set DIR=%~dp0
 set PATH=%DIR%;%PATH%
+set GELECTRON_NATIVE=1
+set GELECTRON_PACKAGED=1
+set GELECTRON_ENGINE=${exeName}.exe
+set GELECTRON_LAUNCHER=%DIR%${exeName}.vbs
+if exist "%DIR%.update\\apply.cmd" (
+  call "%DIR%.update\\apply.cmd"
+  if not errorlevel 1 (
+    del /q "%DIR%.update\\apply.cmd"
+    del /q "%DIR%.update\\pending.json"
+  )
+)
 "%DIR%${exeName}.exe" %*
 `;
   fs.writeFileSync(path.join(outDir, `${exeName}.bat`), bat);
@@ -461,9 +574,10 @@ set PATH=%DIR%;%PATH%
 async function packageLinux(appDir, outDir, name, version, gelectronBin, nodeDir, opts) {
   const exeName = name.replace(/[^a-zA-Z0-9]/g, '');
 
-  // Copy gelectron binary
-  fs.copyFileSync(gelectronBin, path.join(outDir, exeName));
-  fs.chmodSync(path.join(outDir, exeName), 0o755);
+  // Copy gelectron binary under a fixed name so the autoUpdater can find it.
+  // (Previously this overwrote the binary with the launcher script below.)
+  fs.copyFileSync(gelectronBin, path.join(outDir, 'gelectron-bin'));
+  fs.chmodSync(path.join(outDir, 'gelectron-bin'), 0o755);
 
   // Copy Node.js
   const nodeBin = path.join(nodeDir, 'bin', 'node');
@@ -488,13 +602,7 @@ async function packageLinux(appDir, outDir, name, version, gelectronBin, nodeDir
   copyDirSync(appDir, path.join(outDir, 'app'), ['node_modules', '.gelectron-cache', '.git', 'target']);
 
   // Generate launcher script
-  const launcher = `#!/bin/bash
-DIR="$(cd "$(dirname "$0")" && pwd)"
-export PATH="$DIR:$PATH"
-export GELECTRON_NATIVE=1
-exec "$DIR/${exeName}" "$@"
-`;
-  fs.writeFileSync(path.join(outDir, exeName), launcher, { mode: 0o755 });
+  fs.writeFileSync(path.join(outDir, exeName), bashLauncher(exeName, 'gelectron-bin'), { mode: 0o755 });
 
   // Desktop file
   fs.writeFileSync(path.join(outDir, `${name.toLowerCase().replace(/[^a-z0-9]/g, '')}.desktop`),
@@ -538,6 +646,10 @@ for (let i = 0; i < args.length; i++) {
     --arch, -a       Target arch: x64, arm64 (default: current)
     --binary, -b     Path to gelectron binary (for cross-compiled builds)
     --help, -h       Show this help
+
+  Update artifacts (update/latest.yml + a full-bundle .tar.gz) are generated
+  for every package. Upload them to a GitHub release and point the app's
+  autoUpdater.setFeedURL at latest.yml.
 `);
       process.exit(0);
   }

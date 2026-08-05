@@ -131,13 +131,26 @@ class App extends EventEmitter {
   get argv() { return this._argv; }
 
   get isPackaged() {
-    return !process.argv[0].includes('node') && !process.argv[0].includes('gelectron');
+    return process.env.GELECTRON_PACKAGED === '1';
   }
 
   get name() { return this._name; }
   set name(val) { this._name = val || 'Gelectron App'; }
 
-  get version() { return process.env.GELECTRON_VERSION || '0.1.0'; }
+  // The app's own version (from its package.json), used by autoUpdater for
+  // update checks. Falls back to the engine version in development.
+  get version() {
+    const appPath = process.env.GELECTRON_APP_PATH;
+    if (appPath) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(appPath, 'package.json'), 'utf8'));
+        if (pkg && typeof pkg.version === 'string' && pkg.version) return pkg.version;
+      } catch (e) {
+        // No readable package.json — fall through to the engine version
+      }
+    }
+    return process.env.GELECTRON_VERSION || '0.1.0';
+  }
 
   get locale() { return this.getLocale(); }
   get userAgent() { return this.getUserAgent(); }
