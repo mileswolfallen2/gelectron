@@ -143,7 +143,7 @@ When the native binary is not built, the CLI falls back to pure Node.js:
 | Module | Status |
 |---|---|
 | `screen` | `getPrimaryDisplay()` (stub) |
-| `clipboard` | `readText()`, `writeText()` (stub) |
+| `clipboard` | Full API (`readText`/`writeText`/`readHTML`/`readRTF`/`readImage`/`readBookmark`/`readFindText`/`clear`/`availableFormats`/`has`) |
 | `systemPreferences` | Basic stubs |
 | `powerMonitor` | Event stubs |
 | `globalShortcut` | Register/unregister stubs |

@@ -18,7 +18,7 @@
 | 3 | BaseWindow | NO | NO | NO | **missing** | Parent class for BrowserWindow, not implemented |
 | 4 | BrowserView | NO | NO | NO | **missing** | Deprecated in favor of WebContentsView |
 | 5 | BrowserWindow | YES | YES | YES | **partial** | create/show/hide/focus/min/max/close/destroy/setTitle/setSize/loadURL/loadFile. Missing: DevTools, navigation, capturePage, print, printToPDF |
-| 6 | clipboard | YES | inline | YES | **partial** | readText/writeText/readImage/writeImage/readHTML/writeHTML/readBookmark/writeBookmark/clear/has/readFindText, talks to Rust via bridge |
+| 6 | clipboard | YES | inline | YES | **full** | readText/writeText/readHTML/writeHTML/readRTF/writeRTF/readImage/writeImage/readBookmark/writeBookmark/readFindText/writeFindText/clear/availableFormats/has. Sync via Unix FIFO channel (macOS/Linux) or async bridge (Windows). RTF/bookmark/find-text/formats via NSPasteboard on macOS |
 | 7 | contentTracing | NO | NO | NO | **missing** | Tracing/recording profiling data |
 | 8 | crashReporter | NO | NO | NO | **missing** | Crash upload to server |
 | 9 | desktopCapturer | NO | NO | NO | **missing** | Screen/window capture source enumeration |
@@ -101,8 +101,8 @@
 
 | Status | Count | Modules |
 |--------|-------|---------|
-| **full** | 2 | app, ipcMain |
-| **partial** | 15 | BrowserWindow, Menu, MenuItem, dialog, shell, Notification, nativeImage, contextBridge, webContents, ipcRenderer, net, process, clipboard, screen, nativeTheme |
+| **full** | 3 | app, ipcMain, clipboard |
+| **partial** | 14 | BrowserWindow, Menu, MenuItem, dialog, shell, Notification, nativeImage, contextBridge, webContents, ipcRenderer, net, process, screen, nativeTheme |
 | **stub** | 7 | Tray, safeStorage, autoUpdater, session, systemPreferences, powerMonitor, globalShortcut |
 | **missing** | 36 | BaseWindow, BrowserView, contentTracing, crashReporter, desktopCapturer, ImageView, inAppPurchase, MessageChannelMain, netLog, powerSaveBlocker, protocol, pushNotifications, ServiceWorkerMain, sharedTexture, ShareMenu, TouchBar (+10 sub-classes), utilityProcess, View, WebContentsView, webFrameMain, webFrame, webUtils, crashReporter (renderer), sharedTexture (renderer), remote, webviewTag, navigation-history, parent-port, web-request, web-socket, window-open, local-ai-handler |
 | **Total** | **60** | BrowserView counted once (listed in both Main and Deprecated tables) |
@@ -133,6 +133,17 @@ These commands are implemented on the Rust side and can be triggered from the We
 | clipboard-write-text | YES | Write text to clipboard via arboard |
 | clipboard-read-image | YES | Read clipboard image (base64 PNG) via arboard |
 | clipboard-write-image | YES | Write image to clipboard via arboard |
+| clipboard-read-html | YES | Read HTML via arboard |
+| clipboard-write-html | YES | Write HTML (with optional plain-text alt) via arboard |
+| clipboard-read-rtf | YES | Read RTF via NSPasteboard (macOS), empty elsewhere |
+| clipboard-write-rtf | YES | Write RTF via NSPasteboard (macOS), no-op elsewhere |
+| clipboard-read-bookmark | YES | Read bookmark { title, url } via NSPasteboard (macOS) |
+| clipboard-write-bookmark | YES | Write bookmark via NSPasteboard (macOS) |
+| clipboard-read-find-text | YES | Read find-pasteboard text (macOS), empty elsewhere |
+| clipboard-write-find-text | YES | Write find-pasteboard text (macOS), no-op elsewhere |
+| clipboard-clear | YES | Clear clipboard via arboard |
+| clipboard-available-formats | YES | List MIME formats (NSPasteboard types on macOS, arboard probes elsewhere) |
+| clipboard-has | YES | Check if a format is present |
 | screen-get-displays | YES | Query monitor info via tao |
 | native-theme-query | YES | Detect dark mode via platform API |
 | dialog-open | YES | Show native open file dialog via rfd |

@@ -16,6 +16,8 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::{Fullscreen, WindowBuilder, WindowId};
 use wry::{WebView, WebViewBuilder};
 
+mod clipboard;
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 enum ToRust {
@@ -84,6 +86,32 @@ enum ToRust {
     ClipboardReadImage { request_id: String },
     #[serde(rename = "clipboard-write-image")]
     ClipboardWriteImage { data: String },
+    #[serde(rename = "clipboard-read-html")]
+    ClipboardReadHtml { request_id: String },
+    #[serde(rename = "clipboard-write-html")]
+    ClipboardWriteHtml {
+        html: String,
+        #[serde(default)]
+        alt: Option<String>,
+    },
+    #[serde(rename = "clipboard-read-rtf")]
+    ClipboardReadRtf { request_id: String },
+    #[serde(rename = "clipboard-write-rtf")]
+    ClipboardWriteRtf { text: String },
+    #[serde(rename = "clipboard-read-bookmark")]
+    ClipboardReadBookmark { request_id: String },
+    #[serde(rename = "clipboard-write-bookmark")]
+    ClipboardWriteBookmark { title: String, url: String },
+    #[serde(rename = "clipboard-read-find-text")]
+    ClipboardReadFindText { request_id: String },
+    #[serde(rename = "clipboard-write-find-text")]
+    ClipboardWriteFindText { text: String },
+    #[serde(rename = "clipboard-clear")]
+    ClipboardClear,
+    #[serde(rename = "clipboard-available-formats")]
+    ClipboardAvailableFormats { request_id: String },
+    #[serde(rename = "clipboard-has")]
+    ClipboardHas { request_id: String, format: String },
     #[serde(rename = "screen-get-displays")]
     ScreenGetDisplays { request_id: String },
     #[serde(rename = "native-theme-query")]
@@ -354,11 +382,27 @@ fn run_with_node(app_path: PathBuf, main_script: PathBuf, compat_dir: PathBuf) {
         std::process::exit(1);
     });
 
+    // Synchronous clipboard IPC over Unix FIFOs (see clipboard module). On
+    // non-Unix platforms we fall back to the async bridge in the JS layer.
+    #[cfg(unix)]
+    let sync_env_lines = clipboard::setup_sync_ipc()
+        .map(|(req, res)| {
+            format!(
+                "process.env.GELECTRON_SYNC_REQ = '{}';\nprocess.env.GELECTRON_SYNC_RES = '{}';",
+                req.replace('\\', "\\\\").replace('\'', "\\'"),
+                res.replace('\\', "\\\\").replace('\'', "\\'")
+            )
+        })
+        .unwrap_or_default();
+    #[cfg(not(unix))]
+    let sync_env_lines = String::new();
+
     let setup_script = format!(
         r#"
 process.env.GELECTRON_NATIVE = '1';
 process.env.GELECTRON_MAIN_SCRIPT = '{}';
 process.env.GELECTRON_APP_PATH = '{}';
+{}
 
 const Module = require('module');
 const path = require('path');
@@ -394,6 +438,7 @@ require('{}');
 "#,
         main_script.display().to_string().replace('\\', "\\\\").replace('\'', "\\'"),
         app_path.display().to_string().replace('\\', "\\\\").replace('\'', "\\'"),
+        sync_env_lines,
         compat_dir.display().to_string().replace('\\', "\\\\").replace('\'', "\\'"),
         main_script.display().to_string().replace('\\', "\\\\").replace('\'', "\\'"),
     );
@@ -1424,71 +1469,72 @@ fn handle_to_rust(
             log::info!("Close popup menu requested");
         }
         ToRust::ClipboardReadText { request_id } => {
-            let text = arboard::Clipboard::new()
-                .and_then(|mut c| c.get_text().map(|s| s.to_string()))
-                .unwrap_or_default();
+            let text = clipboard::read_text();
             if let Some(ref tx) = st.response_tx {
                 let _ = tx.send((request_id, serde_json::json!(text)));
             }
         }
         ToRust::ClipboardWriteText { text } => {
-            if let Ok(mut c) = arboard::Clipboard::new() {
-                let _ = c.set_text(&text);
-            }
+            clipboard::write_text(&text);
         }
         ToRust::ClipboardReadImage { request_id } => {
-            let data_b64 = arboard::Clipboard::new()
-                .and_then(|mut c| c.get_image())
-                .ok()
-                .and_then(|img| {
-                    let w = img.width;
-                    let h = img.height;
-                    let bytes = &img.bytes;
-                    let mut rgba = Vec::with_capacity(w * h * 4);
-                    for chunk in bytes.chunks_exact(4) {
-                        if chunk.len() >= 4 {
-                            rgba.extend_from_slice(&[chunk[1], chunk[2], chunk[3], chunk[0]]);
-                        }
-                    }
-                    let mut buf = std::io::Cursor::new(Vec::new());
-                    {
-                        let mut encoder = png::Encoder::new(&mut buf, w as u32, h as u32);
-                        encoder.set_color(png::ColorType::Rgba);
-                        encoder.set_depth(png::BitDepth::Eight);
-                        let mut writer = encoder.write_header().ok()?;
-                        writer.write_image_data(&rgba).ok()?;
-                    }
-                    use base64::Engine;
-                    Some(base64::engine::general_purpose::STANDARD.encode(buf.into_inner()))
-                })
-                .unwrap_or_default();
+            let data_b64 = clipboard::read_image();
             if let Some(ref tx) = st.response_tx {
                 let _ = tx.send((request_id, serde_json::json!(data_b64)));
             }
         }
         ToRust::ClipboardWriteImage { data } => {
-            if let Ok(mut c) = arboard::Clipboard::new() {
-                use base64::Engine;
-                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data) {
-                    let cursor = std::io::Cursor::new(&bytes[..]);
-                    let decoder = png::Decoder::new(cursor);
-                    if let Ok(mut reader) = decoder.read_info() {
-                        let mut buf = vec![0; reader.output_buffer_size().unwrap()];
-                        if let Ok(info) = reader.next_frame(&mut buf) {
-                            let (w, h) = (info.width, info.height);
-                            let raw = &buf[..(w as usize * h as usize * 4)];
-                            let mut argb = Vec::with_capacity(raw.len());
-                            for chunk in raw.chunks_exact(4) {
-                                argb.extend_from_slice(&[chunk[3], chunk[0], chunk[1], chunk[2]]);
-                            }
-                            let _ = c.set_image(arboard::ImageData {
-                                width: w as usize,
-                                height: h as usize,
-                                bytes: argb.into(),
-                            });
-                        }
-                    }
-                }
+            clipboard::write_image(&data);
+        }
+        ToRust::ClipboardReadHtml { request_id } => {
+            let html = clipboard::read_html();
+            if let Some(ref tx) = st.response_tx {
+                let _ = tx.send((request_id, serde_json::json!(html)));
+            }
+        }
+        ToRust::ClipboardWriteHtml { html, alt } => {
+            clipboard::write_html(&html, alt.as_deref());
+        }
+        ToRust::ClipboardReadRtf { request_id } => {
+            let text = clipboard::read_rtf();
+            if let Some(ref tx) = st.response_tx {
+                let _ = tx.send((request_id, serde_json::json!(text)));
+            }
+        }
+        ToRust::ClipboardWriteRtf { text } => {
+            clipboard::write_rtf(&text);
+        }
+        ToRust::ClipboardReadBookmark { request_id } => {
+            let (title, url) = clipboard::read_bookmark();
+            if let Some(ref tx) = st.response_tx {
+                let _ = tx.send((request_id, serde_json::json!({ "title": title, "url": url })));
+            }
+        }
+        ToRust::ClipboardWriteBookmark { title, url } => {
+            clipboard::write_bookmark(&title, &url);
+        }
+        ToRust::ClipboardReadFindText { request_id } => {
+            let text = clipboard::read_find_text();
+            if let Some(ref tx) = st.response_tx {
+                let _ = tx.send((request_id, serde_json::json!(text)));
+            }
+        }
+        ToRust::ClipboardWriteFindText { text } => {
+            clipboard::write_find_text(&text);
+        }
+        ToRust::ClipboardClear => {
+            clipboard::clear();
+        }
+        ToRust::ClipboardAvailableFormats { request_id } => {
+            let formats = clipboard::available_formats();
+            if let Some(ref tx) = st.response_tx {
+                let _ = tx.send((request_id, serde_json::json!(formats)));
+            }
+        }
+        ToRust::ClipboardHas { request_id, format } => {
+            let has = clipboard::has(&format);
+            if let Some(ref tx) = st.response_tx {
+                let _ = tx.send((request_id, serde_json::json!(has)));
             }
         }
         ToRust::ScreenGetDisplays { request_id } => {

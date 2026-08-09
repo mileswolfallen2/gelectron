@@ -1406,6 +1406,7 @@ dependencies = [
  "arboard",
  "base64",
  "env_logger",
+ "libc",
  "log",
  "muda",
  "objc2 0.6.4",
