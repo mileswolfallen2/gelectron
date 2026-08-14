@@ -34,7 +34,7 @@
 | 19 | nativeTheme | YES | inline | YES | **partial** | NativeTheme class: shouldUseDarkColors (getter + method), themeSource (getter/setter), shouldSystemUseDarkColors, queries Rust for system theme. systemPreferences.isDarkMode() linked |
 | 20 | net | NO | inline | YES | **partial** | fetch delegates to globalThis.fetch. Missing: net.request(), ClientRequest API |
 | 21 | netLog | NO | NO | NO | **missing** | Network log capture |
-| 22 | Notification | YES | YES | YES | **partial** | API surface complete, show via browser Notification API if available. No native OS integration |
+| 22 | Notification | YES | YES | YES | **full** | Full Electron API (title/subtitle/body/silent/icon/urgency/timeoutType/actions/hasReply/replyPlaceholder/sound/closeButtonText/toastXml). Native OS integration via notify-rust (macOS Notification Center, Windows Toasts, Linux D-Bus). Events: show/click/action/reply/close/failed |
 | 23 | powerMonitor | NO | inline | YES | **stub** | getSystemIdleState returns 'active', no real monitoring |
 | 24 | powerSaveBlocker | NO | NO | NO | **missing** | Prevent system sleep |
 | 25 | protocol | NO | inline (session) | NO | **missing** | Custom protocol registration (standalone module). Session stubs exist |
@@ -101,8 +101,8 @@
 
 | Status | Count | Modules |
 |--------|-------|---------|
-| **full** | 3 | app, ipcMain, clipboard |
-| **partial** | 14 | BrowserWindow, Menu, MenuItem, dialog, shell, Notification, nativeImage, contextBridge, webContents, ipcRenderer, net, process, screen, nativeTheme |
+| **full** | 4 | app, ipcMain, clipboard, Notification |
+| **partial** | 13 | BrowserWindow, Menu, MenuItem, dialog, shell, nativeImage, contextBridge, webContents, ipcRenderer, net, process, screen, nativeTheme |
 | **stub** | 7 | Tray, safeStorage, autoUpdater, session, systemPreferences, powerMonitor, globalShortcut |
 | **missing** | 36 | BaseWindow, BrowserView, contentTracing, crashReporter, desktopCapturer, ImageView, inAppPurchase, MessageChannelMain, netLog, powerSaveBlocker, protocol, pushNotifications, ServiceWorkerMain, sharedTexture, ShareMenu, TouchBar (+10 sub-classes), utilityProcess, View, WebContentsView, webFrameMain, webFrame, webUtils, crashReporter (renderer), sharedTexture (renderer), remote, webviewTag, navigation-history, parent-port, web-request, web-socket, window-open, local-ai-handler |
 | **Total** | **60** | BrowserView counted once (listed in both Main and Deprecated tables) |

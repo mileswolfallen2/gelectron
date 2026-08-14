@@ -52,6 +52,9 @@ class NativeBridge extends EventEmitter {
       case 'ipc-message':
         this.emit('ipc-message', msg.id, msg.channel, msg.data);
         break;
+      case 'notification-event':
+        this.emit('notification-event', msg);
+        break;
       case 'response':
         this._resolveRequest(msg.request_id, msg.result, msg.error || null);
         break;

@@ -13,6 +13,10 @@ pub struct NotificationOptions {
     pub timeout_type: Option<String>,
     pub close_button_text: Option<String>,
     pub toast_xml: Option<String>,
+    #[serde(default)]
+    pub actions: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub sound: Option<String>,
 }
 
 #[napi(object)]
@@ -39,12 +43,55 @@ pub fn notification_create(options_json: String) -> Result<String> {
     let mut notification = notify_rust::Notification::new();
     notification.summary(&title).body(&body);
 
-    if let Some(true) = opts.silent {
+    if let Some(sub) = &opts.subtitle {
+        notification.subtitle(sub);
+    }
+    if let Some(sound) = &opts.sound {
+        notification.sound_name(sound);
+    }
+    if opts.silent.unwrap_or(false) {
         notification.sound_name("");
+    }
+    if let Some(path) = &opts.icon {
+        if std::path::Path::new(path).exists() {
+            notification.image_path(path);
+        }
+    }
+    if let Some(timeout) = &opts.timeout_type {
+        match timeout.as_str() {
+            "never" => {
+                notification.timeout(notify_rust::Timeout::Never);
+            }
+            other => {
+                if let Ok(ms) = other.parse::<i32>() {
+                    notification.timeout(ms);
+                }
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    if let Some(urgency) = &opts.urgency {
+        let u = match urgency.as_str() {
+            "low" => notify_rust::Urgency::Low,
+            "critical" => notify_rust::Urgency::Critical,
+            _ => notify_rust::Urgency::Normal,
+        };
+        notification.urgency(u);
+    }
+    for (i, action) in opts.actions.iter().enumerate() {
+        if let Some(text) = action.get("text").and_then(|v| v.as_str()) {
+            notification.action(&i.to_string(), text);
+        }
     }
 
     match notification.show() {
-        Ok(_) => {
+        Ok(handle) => {
+            let nid = id.clone();
+            std::thread::spawn(move || {
+                let _ = handle.wait_for_response(|_response: &notify_rust::NotificationResponse| {
+                    log::info!("Notification {} responded", nid);
+                });
+            });
             log::info!("Notification '{}' shown", title);
         }
         Err(e) => {
@@ -63,5 +110,13 @@ pub fn notification_close(notification_id: String) -> Result<()> {
 
 #[napi]
 pub fn notification_is_supported() -> bool {
-    true
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // Linux requires a notification daemon on D-Bus; probe for one.
+        return notify_rust::get_capabilities().is_ok();
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    {
+        true
+    }
 }

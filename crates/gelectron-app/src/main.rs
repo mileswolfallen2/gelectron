@@ -132,6 +132,16 @@ enum ToRust {
     ShellShowInFolder { path: String },
     #[serde(rename = "shell-move-to-trash")]
     ShellMoveToTrash { path: String, request_id: Option<String> },
+    #[serde(rename = "notification-show")]
+    NotificationShow {
+        id: String,
+        request_id: String,
+        options: NotificationOpts,
+    },
+    #[serde(rename = "notification-close")]
+    NotificationClose { id: String },
+    #[serde(rename = "notification-is-supported")]
+    NotificationIsSupported { request_id: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -156,6 +166,17 @@ enum ToNode {
         #[serde(default)]
         error: Option<String>,
     },
+    #[serde(rename = "notification-event")]
+    NotificationEvent {
+        id: String,
+        event: String,
+        #[serde(default)]
+        action_index: Option<u32>,
+        #[serde(default)]
+        action: Option<String>,
+        #[serde(default)]
+        reply: Option<String>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -178,6 +199,38 @@ struct WindowOpts {
     fullscreen: Option<bool>,
     #[serde(default)]
     icon: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+struct NotificationOpts {
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    subtitle: Option<String>,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    silent: Option<bool>,
+    #[serde(default)]
+    icon: Option<String>,
+    #[serde(default)]
+    urgency: Option<String>,
+    #[serde(default)]
+    timeout_type: Option<String>,
+    #[serde(default)]
+    close_button_text: Option<String>,
+    #[serde(default)]
+    toast_xml: Option<String>,
+    #[serde(default)]
+    actions: Vec<serde_json::Value>,
+    #[serde(default)]
+    has_reply: Option<bool>,
+    #[serde(default)]
+    reply_placeholder: Option<String>,
+    #[serde(default)]
+    sound: Option<String>,
+    #[serde(default)]
+    app_name: Option<String>,
 }
 
 struct WindowPair {
@@ -632,6 +685,9 @@ window.__gelectron_run_main(`{}`);
                             }
                             ToNode::Response { request_id, result, error } => {
                                 serde_json::json!({"__from_node":true,"type":"response","request_id":request_id,"result":result,"error":error})
+                            }
+                            ToNode::NotificationEvent { id, event, action_index, action, reply } => {
+                                serde_json::json!({"__from_node":true,"type":"notification-event","id":id,"event":event,"action_index":action_index,"action":action,"reply":reply})
                             }
                         };
                         let _ = pair.webview.evaluate_script(
@@ -1268,6 +1324,114 @@ fn apply_dock_icon_from_path(path: &std::path::Path) {
     }
 }
 
+fn show_native_notification(
+    options: &NotificationOpts,
+    nid: &str,
+    request_id: &str,
+    tx: &Option<mpsc::Sender<(String, serde_json::Value)>>,
+    ipc_tx: &mpsc::Sender<ToNode>,
+) {
+    use notify_rust::{Notification, NotificationResponse, Timeout};
+    #[cfg(not(target_os = "macos"))]
+    use notify_rust::Urgency;
+
+    let mut n = Notification::new();
+    n.summary(options.title.clone().unwrap_or_default().as_str())
+        .body(options.body.clone().unwrap_or_default().as_str());
+
+    if let Some(sub) = &options.subtitle {
+        n.subtitle(sub);
+    }
+    if let Some(app) = &options.app_name {
+        n.appname(app);
+    }
+    if let Some(sound) = &options.sound {
+        n.sound_name(sound);
+    }
+    if options.silent.unwrap_or(false) {
+        n.sound_name("");
+    }
+    if let Some(path) = &options.icon {
+        if std::path::Path::new(path).exists() {
+            n.image_path(path);
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Some(urgency) = &options.urgency {
+            let u = match urgency.as_str() {
+                "low" => Urgency::Low,
+                "critical" => Urgency::Critical,
+                _ => Urgency::Normal,
+            };
+            n.urgency(u);
+        }
+    }
+    if let Some(t) = &options.timeout_type {
+        match t.as_str() {
+            "never" => {
+                n.timeout(Timeout::Never);
+            }
+            other => {
+                if let Ok(ms) = other.parse::<i32>() {
+                    n.timeout(ms);
+                }
+            }
+        }
+    }
+    // Electron action objects ({ text, ... }) → notify-rust action(id, label)
+    for (i, action) in options.actions.iter().enumerate() {
+        let text = action.get("text").and_then(|v| v.as_str()).unwrap_or_default();
+        n.action(&i.to_string(), text);
+    }
+
+    match n.show() {
+        Ok(handle) => {
+            if let Some(ref tx) = tx {
+                let _ = tx.send((
+                    request_id.to_string(),
+                    serde_json::json!({ "id": nid, "success": true }),
+                ));
+            }
+            let _ = handle.wait_for_response(|response: &NotificationResponse| {
+                let (event, action_index, action, reply) = match response {
+                    NotificationResponse::Default => ("click", None, None, None),
+                    NotificationResponse::Action(key) => (
+                        "action",
+                        key.parse::<u32>().ok(),
+                        Some(key.clone()),
+                        None,
+                    ),
+                    NotificationResponse::Reply(text) => ("reply", None, None, Some(text.clone())),
+                    NotificationResponse::Closed(_) => ("close", None, None, None),
+                };
+                let _ = ipc_tx.send(ToNode::NotificationEvent {
+                    id: nid.to_string(),
+                    event: event.to_string(),
+                    action_index,
+                    action,
+                    reply,
+                });
+            });
+        }
+        Err(e) => {
+            if let Some(ref tx) = tx {
+                let _ = tx.send((
+                    request_id.to_string(),
+                    serde_json::json!({ "id": nid, "success": false, "error": e.to_string() }),
+                ));
+            }
+            let _ = ipc_tx.send(ToNode::NotificationEvent {
+                id: nid.to_string(),
+                event: "failed".to_string(),
+                action_index: None,
+                action: None,
+                reply: Some(e.to_string()),
+            });
+        }
+    }
+}
+
 fn handle_to_rust(
     msg: ToRust,
     st: &mut AppState,
@@ -1761,6 +1925,25 @@ fn handle_to_rust(
                         "error": if result { serde_json::Value::Null } else { serde_json::json!("Failed to move to trash") }
                     })));
                 }
+            }
+        }
+        ToRust::NotificationShow { id, request_id, options } => {
+            let tx = st.response_tx.clone();
+            let ipc_tx2 = ipc_tx.clone();
+            let nid = id.clone();
+            thread::spawn(move || {
+                show_native_notification(&options, &nid, &request_id, &tx, &ipc_tx2);
+            });
+        }
+        ToRust::NotificationClose { id } => {
+            // notify-rust has no cross-platform way to force-dismiss a
+            // notification that is already awaiting a response; the JS layer
+            // emits 'close' itself when close() is called.
+            log::info!("Notification {} closed", id);
+        }
+        ToRust::NotificationIsSupported { request_id } => {
+            if let Some(ref tx) = st.response_tx {
+                let _ = tx.send((request_id, serde_json::json!({ "supported": true })));
             }
         }
         ToRust::SetTitle { id, title } => {

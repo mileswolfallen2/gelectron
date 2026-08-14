@@ -126,7 +126,7 @@ When the native binary is not built, the CLI falls back to pure Node.js:
 | `Tray` | Create, tooltip, context menu, click events |
 | `dialog` | `showOpenDialog()`, `showSaveDialog()`, `showMessageBox()`, `showErrorBox()` |
 | `shell` | `openExternal()`, `showItemInFolder()`, `openPath()` |
-| `Notification` | Create, show, close, urgency levels |
+| `Notification` | Full API + native OS notifications (macOS Notification Center, Windows Toasts, Linux D-Bus); click/action/reply/close/failed events |
 | `nativeImage` | Create from path/buffer, resize, crop, PNG/JPEG export |
 | `safeStorage` | Encrypt/decrypt via system keyring |
 | `contextBridge` | `exposeInMainWorld()` for secure preload |
