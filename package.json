@@ -1,6 +1,6 @@
 {
   "name": "gelectron",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Firefox-engine alternative to Electron, powered by Servo",
   "main": "src/electron/index.js",
   "bin": {
@@ -58,11 +58,11 @@
     "node": ">=18.0.0"
   },
   "optionalDependencies": {
-    "gelectron-darwin-arm64": "0.1.0",
-    "gelectron-darwin-x64": "0.1.0",
-    "gelectron-linux-arm64-gnu": "0.1.0",
-    "gelectron-linux-x64-gnu": "0.1.0",
-    "gelectron-win32-arm64-msvc": "0.1.0",
-    "gelectron-win32-x64-msvc": "0.1.0"
+    "gelectron-darwin-arm64": "0.1.1",
+    "gelectron-darwin-x64": "0.1.1",
+    "gelectron-linux-arm64-gnu": "0.1.1",
+    "gelectron-linux-x64-gnu": "0.1.1",
+    "gelectron-win32-arm64-msvc": "0.1.1",
+    "gelectron-win32-x64-msvc": "0.1.1"
   }
 }

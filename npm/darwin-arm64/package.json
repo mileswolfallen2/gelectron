@@ -1,6 +1,6 @@
 {
   "name": "gelectron-darwin-arm64",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Gelectron native addon for macOS ARM64",
   "main": "gelectron_core.darwin-arm64.node",
   "files": ["gelectron_core.darwin-arm64.node"],

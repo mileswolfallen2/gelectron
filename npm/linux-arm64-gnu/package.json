@@ -1,6 +1,6 @@
 {
   "name": "gelectron-linux-arm64-gnu",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Gelectron native addon for Linux ARM64 (GNU)",
   "main": "gelectron_core.linux-arm64-gnu.node",
   "files": ["gelectron_core.linux-arm64-gnu.node"],

@@ -1,6 +1,6 @@
 {
   "name": "gelectron-win32-arm64-msvc",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Gelectron native addon for Windows ARM64",
   "main": "gelectron_core.win32-arm64-msvc.node",
   "files": ["gelectron_core.win32-arm64-msvc.node"],
