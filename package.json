@@ -1,10 +1,10 @@
 {
-  "name": "gelectron",
+  "name": "gelectron-core",
   "version": "0.1.1",
   "description": "Firefox-engine alternative to Electron, powered by Servo",
   "main": "src/electron/index.js",
   "bin": {
-    "gelectron": "./cli/gelectron.js"
+    "gelectron-core": "./cli/gelectron.js"
   },
   "scripts": {
     "build": "napi build --platform --release --package gelectron-core",
@@ -63,6 +63,12 @@
     "gelectron-linux-arm64-gnu": "0.1.1",
     "gelectron-linux-x64-gnu": "0.1.1",
     "gelectron-win32-arm64-msvc": "0.1.1",
-    "gelectron-win32-x64-msvc": "0.1.1"
+    "gelectron-win32-x64-msvc": "0.1.1",
+    "gelectron-core-darwin-x64": "0.1.1",
+    "gelectron-core-darwin-arm64": "0.1.1",
+    "gelectron-core-win32-x64-msvc": "0.1.1",
+    "gelectron-core-win32-arm64-msvc": "0.1.1",
+    "gelectron-core-linux-x64-gnu": "0.1.1",
+    "gelectron-core-linux-arm64-gnu": "0.1.1"
   }
 }

@@ -3,9 +3,15 @@
   "version": "0.1.1",
   "description": "Gelectron native addon for macOS x64",
   "main": "gelectron_core.darwin-x64.node",
-  "files": ["gelectron_core.darwin-x64.node"],
-  "os": ["darwin"],
-  "cpu": ["x64"],
+  "files": [
+    "gelectron_core.darwin-x64.node"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
   "license": "MIT",
   "author": "mileswa1q22"
 }

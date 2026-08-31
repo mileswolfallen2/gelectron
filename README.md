@@ -22,13 +22,31 @@ Electron bundles Chromium — ~300 MB per app with 500+ MB RSS. Gelectron uses t
 
 ## Quick Start
 
-### Prerequisites
+### Install from npm (recommended)
+
+The built native binary and the Electron compatibility layer are published to npm. This is the main and easiest way to get Gelectron — no Rust toolchain required:
+
+```bash
+npm install -g gelectron-core
+```
+
+This installs the `gelectron-core` package, which bundles the pre-built native binary and the JS compatibility layer, and automatically pulls in the platform-specific addon for your operating system and CPU architecture (see the [package on npm](https://www.npmjs.com/package/gelectron-core)).
+
+Once installed, run any Electron app with:
+
+```bash
+gelectron-core /path/to/electron-app
+```
+
+> The `gelectron-core` npm package is the recommended distribution channel. Building from source (below) is only needed if you're developing Gelectron itself or want the bleeding-edge version.
+
+### Prerequisites (for building from source)
 
 - Rust 1.75+ (`rustup.rs`)
 - Node.js 18+
 - npm
 
-### Build & Run
+### Build & Run (from source)
 
 ```bash
 git clone https://github.com/mileswolfallen2/gelectron.git
