@@ -316,6 +316,175 @@ cargo build --release -p gelectron-core
 
 The N-API addon compiles to a `.node` file that can be loaded directly into Node.js.
 
+## Publishing to npm
+
+Gelectron uses [napi-rs](https://napi.rs/) to produce platform-specific native addons. The main `gelectron` npm package ships platform-specific optional packages so that `npm install gelectron` automatically pulls the right binary for the user's OS.
+
+### Prerequisites
+
+- Rust 1.75+ (`rustup.rs`)
+- Node.js 18+
+- npm
+- An [npm account](https://www.npmjs.com/signup) with publish access
+- Each target platform needs to be built on that platform (or via CI)
+
+### Step 1: Build the native addon for your platform
+
+```bash
+# Build the N-API addon (produces crates/gelectron-core/*.node)
+npm run build
+
+# Or build with debug symbols for development
+npm run build:debug
+```
+
+This compiles the Rust N-API addon (`gelectron-core`) into a `.node` file that Node.js can load.
+
+### Step 2: Create platform-specific npm packages
+
+For each platform you want to support, create a directory under `npm/` with a `package.json`:
+
+```bash
+# Example for macOS ARM64
+mkdir -p npm/darwin-arm64
+cat > npm/darwin-arm64/package.json << 'EOF'
+{
+  "name": "gelectron-darwin-arm64",
+  "version": "0.1.0",
+  "description": "Gelectron native addon for macOS ARM64",
+  "main": "index.darwin-arm64.node",
+  "files": ["index.darwin-arm64.node"],
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "license": "MIT"
+}
+EOF
+
+# Copy the built .node file
+cp crates/gelectron-core/gelectron_core.darwin-arm64.node npm/darwin-arm64/
+```
+
+Repeat for each platform:
+
+| Directory | os | cpu |
+|---|---|---|
+| `npm/darwin-arm64/` | `darwin` | `arm64` |
+| `npm/darwin-x64/` | `darwin` | `x64` |
+| `npm/win32-x64-msvc/` | `win32` | `x64` |
+| `npm/win32-arm64-msvc/` | `win32` | `arm64` |
+| `npm/linux-x64-gnu/` | `linux` | `x64` |
+| `npm/linux-arm64-gnu/` | `linux` | `arm64` |
+
+### Step 3: Publish platform packages first
+
+Each platform package must be published before the main package:
+
+```bash
+# Publish each platform package
+npm publish npm/darwin-arm64 --access public
+npm publish npm/darwin-x64 --access public
+npm publish npm/win32-x64-msvc --access public
+# ... etc for each platform
+```
+
+### Step 4: Prepare and publish the main package
+
+```bash
+# Run prepublish hook (generates napi artifacts metadata)
+npm run prepublishOnly
+
+# Publish the main package
+npm publish --access public
+```
+
+### Using napi-rs CLI (recommended)
+
+The `@napi-rs/cli` handles cross-compilation and artifact management:
+
+```bash
+# Install napi-rs CLI globally (if not already installed)
+npm install -g @napi-rs/cli
+
+# Build for all configured targets
+napi build --platform --release
+
+# Generate artifact metadata for npm publishing
+napi prepublish -t npm
+
+# Create a GitHub release with platform binaries
+napi artifacts
+```
+
+### CI/CD Publishing (recommended)
+
+For multi-platform publishing, use GitHub Actions to build on each OS:
+
+```yaml
+# .github/workflows/publish.yml
+name: Publish to npm
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - run: npm ci
+      - run: napi build --platform --release --target ${{ matrix.target }}
+      - run: napi prepublish -t npm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.target }}
+          path: npm/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+```
+
+### Quick publish (single platform)
+
+If you only need to publish for your current platform:
+
+```bash
+# Build
+npm run build
+
+# Preview what will be published
+npm pack --dry-run
+
+# Publish
+npm run prepublishOnly
+npm publish --access public
+```
+
+> **Tip:** Use `npm pack` to create a tarball locally and inspect it before publishing. Run `npm pack` and then `tar -tzf gelectron-0.1.0.tgz` to verify the contents.
+
 ## Testing with OmniEmu2.0
 
 OmniEmu2.0 is a full Electron app used to validate Gelectron compatibility:

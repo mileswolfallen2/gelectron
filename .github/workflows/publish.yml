@@ -1,0 +1,129 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build N-API addon for ${{ matrix.target }}
+        run: napi build --platform --release --target ${{ matrix.target }} --package gelectron-core
+
+      - name: Rename .node file with platform-specific name
+        shell: bash
+        run: |
+          case "${{ matrix.target }}" in
+            x86_64-apple-darwin)       name="gelectron_core.darwin-x64.node" ;;
+            aarch64-apple-darwin)      name="gelectron_core.darwin-arm64.node" ;;
+            x86_64-pc-windows-msvc)    name="gelectron_core.win32-x64-msvc.node" ;;
+            aarch64-pc-windows-msvc)   name="gelectron_core.win32-arm64-msvc.node" ;;
+            x86_64-unknown-linux-gnu)  name="gelectron_core.linux-x64-gnu.node" ;;
+            aarch64-unknown-linux-gnu) name="gelectron_core.linux-arm64-gnu.node" ;;
+          esac
+          find crates/gelectron-core -name "*.node" -exec mv {} "$name" \;
+          ls -la *.node
+
+      - name: Upload .node artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.target }}
+          path: gelectron_core.*.node
+
+  publish:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+    environment: npm-publish
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download all platform packages
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: bindings-*
+          merge-multiple: true
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Assemble platform packages
+        shell: bash
+        run: |
+          for node in artifacts/*.node; do
+            base="$(basename "$node")"
+            case "$base" in
+              *.darwin-x64.node)       dir="npm/darwin-x64" ;;
+              *.darwin-arm64.node)     dir="npm/darwin-arm64" ;;
+              *.win32-x64-msvc.node)   dir="npm/win32-x64-msvc" ;;
+              *.win32-arm64-msvc.node) dir="npm/win32-arm64-msvc" ;;
+              *.linux-x64-gnu.node)    dir="npm/linux-x64-gnu" ;;
+              *.linux-arm64-gnu.node)  dir="npm/linux-arm64-gnu" ;;
+            esac
+            cp "$node" "$dir/$base"
+          done
+          echo "Assembled platform packages:"
+          ls -la npm/*/
+
+      - name: Publish platform packages
+        shell: bash
+        run: |
+          for dir in npm/*/; do
+            cd "$dir"
+            npm publish --access public
+            cd ../../
+          done
+
+      - name: Publish main package
+        run: |
+          npm run prepublishOnly
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

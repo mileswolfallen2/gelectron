@@ -11,6 +11,13 @@ use std::sync::mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+// Heartbeat interval for the event loop. We avoid ControlFlow::Poll (which
+// busy-spins at 100% CPU when idle) and instead wake the loop on a fixed
+// cadence to drain IPC channels, while still responding immediately to real
+// window events.
+const POLL_INTERVAL: Duration = Duration::from_millis(16);
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::{Fullscreen, WindowBuilder, WindowId};
@@ -236,7 +243,7 @@ struct NotificationOpts {
 struct WindowPair {
     #[allow(dead_code)]
     window: tao::window::Window,
-    webview: WebView,
+    webview: Option<WebView>,
 }
 
 struct AppState {
@@ -548,7 +555,7 @@ require('{}');
     }
 
     event_loop.run(move |event, event_loop_target, control_flow| {
-        *control_flow = ControlFlow::Poll;
+        *control_flow = ControlFlow::WaitUntil(Instant::now() + POLL_INTERVAL);
         let mut st = state.borrow_mut();
 
         if st.node_exited.load(Ordering::SeqCst) {
@@ -559,7 +566,7 @@ require('{}');
         }
 
         match event {
-            Event::NewEvents(StartCause::Poll) => {
+            Event::NewEvents(StartCause::Poll | StartCause::ResumeTimeReached { .. }) => {
                 // Drain async responses from background threads (dialogs, clipboard, etc.)
                 while let Ok((request_id, result)) = response_rx.try_recv() {
                     st.send_to_node(&ToNode::Response {
@@ -650,21 +657,23 @@ window.__gelectron_run_main(`{}`);
     }
 
     event_loop.run(move |event, event_loop_target, control_flow| {
-        *control_flow = ControlFlow::Poll;
+        *control_flow = ControlFlow::WaitUntil(Instant::now() + POLL_INTERVAL);
         let mut st = state.borrow_mut();
 
         match event {
-            Event::NewEvents(StartCause::Poll) => {
+            Event::NewEvents(StartCause::Poll | StartCause::ResumeTimeReached { .. }) => {
                 // Drain async responses from background threads (dialogs, clipboard, etc.)
                 while let Ok((request_id, result)) = response_rx.try_recv() {
-                    if let Some(pair) = st.windows.get(&1u32) {
+                if let Some(pair) = st.windows.get(&1u32) {
+                    if let Some(webview) = &pair.webview {
                         let js = format!(
                             "window.__gelectron_response('{}', {});",
                             request_id,
                             serde_json::to_string(&result).unwrap_or_default()
                         );
-                        let _ = pair.webview.evaluate_script(&js);
+                        let _ = webview.evaluate_script(&js);
                     }
+                }
                 }
 
                 // Drain IPC messages from webview → forward back into the same webview
@@ -690,9 +699,9 @@ window.__gelectron_run_main(`{}`);
                                 serde_json::json!({"__from_node":true,"type":"notification-event","id":id,"event":event,"action_index":action_index,"action":action,"reply":reply})
                             }
                         };
-                        let _ = pair.webview.evaluate_script(
+                        let _ = pair.webview.as_ref().map(|wv| wv.evaluate_script(
                             &format!("window.postMessage({},'*');", serde_json::to_string(&js_msg).unwrap())
-                        );
+                        ));
                     }
                 }
 
@@ -719,7 +728,7 @@ window.__gelectron_run_main(`{}`);
                         let js = serde_json::to_string(&serde_json::json!({
                             "__from_node": true, "type": "window-closed", "id": id,
                         })).unwrap();
-                        let _ = pair.webview.evaluate_script(&format!("window.postMessage({},'*');", js));
+                        let _ = pair.webview.as_ref().map(|wv| wv.evaluate_script(&format!("window.postMessage({},'*');", js)));
                     }
                     st.windows.remove(&id);
                     st.window_wids.remove(&window_id);
@@ -733,13 +742,54 @@ window.__gelectron_run_main(`{}`);
                         let js = serde_json::to_string(&serde_json::json!({
                             "__from_node": true, "type": "window-focus", "id": id,
                         })).unwrap();
-                        let _ = pair.webview.evaluate_script(&format!("window.postMessage({},'*');", js));
+                        let _ = pair.webview.as_ref().map(|wv| wv.evaluate_script(&format!("window.postMessage({},'*');", js)));
                     }
                 }
             }
             _ => {}
         }
     });
+}
+
+fn create_webview(
+    window: &tao::window::Window,
+    url: &str,
+    init: &str,
+    id: u32,
+    ipc_tx: &mpsc::Sender<ToNode>,
+    to_rust_tx: Option<&Arc<mpsc::Sender<ToRust>>>,
+) -> wry::Result<WebView> {
+    let ipc_tx_clone = ipc_tx.clone();
+    let to_rust_tx_clone = to_rust_tx.cloned();
+    let wid_for_ipc = id;
+    WebViewBuilder::new()
+        .with_url(url)
+        .with_initialization_script(init)
+        .with_devtools(false)
+        .with_ipc_handler(move |req| {
+            let body = req.body().to_string();
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
+                // Try parsing as a ToRust command (load-file, load-url, etc.)
+                if let Some(ref tx) = to_rust_tx_clone {
+                    if let Ok(cmd) = serde_json::from_value::<ToRust>(val.clone()) {
+                        let _ = tx.send(cmd);
+                        return;
+                    }
+                }
+                // Fall back to ipc-send handling
+                let msg_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                if msg_type == "ipc-send" {
+                    let channel = val.get("channel").and_then(|v| v.as_str()).unwrap_or("");
+                    let args = val.get("args").cloned().unwrap_or(serde_json::Value::Null);
+                    let _ = ipc_tx_clone.send(ToNode::IpcMessage { id: wid_for_ipc, channel: channel.to_string(), data: args });
+                } else if msg_type == "quit" {
+                    if let Some(ref tx) = to_rust_tx_clone {
+                        let _ = tx.send(ToRust::Quit);
+                    }
+                }
+            }
+        })
+        .build(window)
 }
 
 fn create_initial_webview_window(
@@ -783,7 +833,7 @@ fn create_initial_webview_window(
             Ok(webview) => {
                 let wid = window.id();
                 let mut st = state.borrow_mut();
-                st.windows.insert(window_id, WindowPair { window, webview });
+                st.windows.insert(window_id, WindowPair { window, webview: Some(webview) });
                 st.window_wids.insert(wid, window_id);
                 log::info!("Initial WebView window created (running compat layer)");
             }
@@ -1459,58 +1509,32 @@ fn handle_to_rust(
                 Ok(window) => {
                     let url = options.url.unwrap_or_else(|| "about:blank".into());
                     log::info!("Creating window {} - '{}'", id, url);
-                    let ipc_tx_clone = ipc_tx.clone();
-                    let to_rust_tx_clone = to_rust_tx.cloned();
-                    let wid_for_ipc = id;
                     let init = st.bundle_js.clone().unwrap_or_else(|| preload_script());
-                    match WebViewBuilder::new()
-                        .with_url(&url)
-                        .with_initialization_script(&init)
-                        .with_devtools(false)
-                        .with_ipc_handler(move |req| {
-                            let body = req.body().to_string();
-                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
-                                // Try parsing as a ToRust command (load-file, load-url, etc.)
-                                if let Some(ref tx) = to_rust_tx_clone {
-                                    if let Ok(cmd) = serde_json::from_value::<ToRust>(val.clone()) {
-                                        let _ = tx.send(cmd);
-                                        return;
-                                    }
-                                }
-                                // Fall back to ipc-send handling
-                                let msg_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                                if msg_type == "ipc-send" {
-                                    let channel = val.get("channel").and_then(|v| v.as_str()).unwrap_or("");
-                                    let args = val.get("args").cloned().unwrap_or(serde_json::Value::Null);
-                                    let _ = ipc_tx_clone.send(ToNode::IpcMessage { id: wid_for_ipc, channel: channel.to_string(), data: args });
-                                } else if msg_type == "quit" {
-                                    if let Some(ref tx) = to_rust_tx_clone {
-                                        let _ = tx.send(ToRust::Quit);
-                                    }
-                                }
-                            }
-                        })
-                        .build(&window)
-                    {
-                        Ok(webview) => {
-                            let wid = window.id();
-                            if let Some(icon) = options
-                                .icon
-                                .as_deref()
-                                .and_then(decode_base64_icon)
-                            {
-                                st.app_icon = Some(icon.clone());
-                                apply_dock_icon(&icon);
-                                apply_window_icon(&window, &icon);
-                            } else if let Some(icon) = st.app_icon.clone() {
-                                apply_window_icon(&window, &icon);
-                            }
-                            st.windows.insert(id, WindowPair { window, webview });
-                            st.window_wids.insert(wid, id);
-                            log::info!("Window {} ready", id);
+                    // Build the WebView immediately (about:blank). Init scripts
+                    // and the ipc message handler are registered at build time
+                    // and survive subsequent in-place navigations (LoadUrl/LoadFile).
+                    let webview = match create_webview(&window, &url, &init, id, ipc_tx, to_rust_tx) {
+                        Ok(wv) => Some(wv),
+                        Err(e) => {
+                            log::error!("WebView error: {}", e);
+                            None
                         }
-                        Err(e) => log::error!("WebView error: {}", e),
+                    };
+                    let wid = window.id();
+                    if let Some(icon) = options
+                        .icon
+                        .as_deref()
+                        .and_then(decode_base64_icon)
+                    {
+                        st.app_icon = Some(icon.clone());
+                        apply_dock_icon(&icon);
+                        apply_window_icon(&window, &icon);
+                    } else if let Some(icon) = st.app_icon.clone() {
+                        apply_window_icon(&window, &icon);
                     }
+                    st.windows.insert(id, WindowPair { window, webview });
+                    st.window_wids.insert(wid, id);
+                    log::info!("Window {} ready", id);
                 }
                 Err(e) => log::error!("Window error: {}", e),
             }
@@ -1518,10 +1542,12 @@ fn handle_to_rust(
         ToRust::LoadUrl { id, url } => {
             log::info!("Loading url in window {}: {}", id, url);
             if let Some(pair) = st.windows.get(&id) {
-                let _ = pair.webview.evaluate_script(&format!(
-                    "window.location.replace({});",
-                    serde_json::to_string(&url).unwrap()
-                ));
+                if let Some(webview) = &pair.webview {
+                    let _ = webview.evaluate_script(&format!(
+                        "window.location.replace({});",
+                        serde_json::to_string(&url).unwrap()
+                    ));
+                }
             }
         }
         ToRust::LoadFile { id, path } => {
@@ -1529,44 +1555,17 @@ fn handle_to_rust(
                 .map(|u| u.to_string())
                 .unwrap_or_else(|_| "about:blank".into());
             log::info!("Loading file in window {}: {}", id, url);
-            let init = st.bundle_js.clone().unwrap_or_else(|| preload_script());
-            if let Some(pair) = st.windows.get_mut(&id) {
-                let window = &pair.window;
-                let ipc_tx_clone = ipc_tx.clone();
-                let to_rust_tx_clone = to_rust_tx.cloned();
-                let wid_for_ipc = id;
-                match WebViewBuilder::new()
-                    .with_url(&url)
-                    .with_initialization_script(&init)
-                    .with_devtools(false)
-                    .with_ipc_handler(move |req| {
-                        let body = req.body().to_string();
-                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
-                            if let Some(ref tx) = to_rust_tx_clone {
-                                if let Ok(cmd) = serde_json::from_value::<ToRust>(val.clone()) {
-                                    let _ = tx.send(cmd);
-                                    return;
-                                }
-                            }
-                            let msg_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                            if msg_type == "ipc-send" {
-                                let channel = val.get("channel").and_then(|v| v.as_str()).unwrap_or("");
-                                let args = val.get("args").cloned().unwrap_or(serde_json::Value::Null);
-                                let _ = ipc_tx_clone.send(ToNode::IpcMessage { id: wid_for_ipc, channel: channel.to_string(), data: args });
-                            } else if msg_type == "quit" {
-                                if let Some(ref tx) = to_rust_tx_clone {
-                                    let _ = tx.send(ToRust::Quit);
-                                }
-                            }
-                        }
-                    })
-                    .build(window)
-                {
-                    Ok(webview) => {
-                        pair.webview = webview;
-                        log::info!("WebView rebuilt for window {}", id);
-                    }
-                    Err(e) => log::error!("WebView rebuild error: {}", e),
+            // Navigate in-place instead of rebuilding the WebView. Rebuilding on
+            // macOS creates a stray 500x500 NSWindow artifact when the target
+            // window is still hidden (the vanilla app loads its splash this way).
+            // The WKUserScript init script re-runs on navigation, so window.gelectron
+            // (and any bundle) is re-established on the new document.
+            if let Some(pair) = st.windows.get(&id) {
+                if let Some(webview) = &pair.webview {
+                    let _ = webview.evaluate_script(&format!(
+                        "window.location.replace({});",
+                        serde_json::to_string(&url).unwrap()
+                    ));
                 }
             }
         }
@@ -1584,12 +1583,12 @@ fn handle_to_rust(
             if let Some(pair) = st.windows.get(&id) {
                 let msg = serde_json::json!({"__from_node":true,"channel":channel,"data":data});
                 let js = format!("window.postMessage({},'*');", serde_json::to_string(&msg).unwrap());
-                let _ = pair.webview.evaluate_script(&js);
+                let _ = pair.webview.as_ref().map(|wv| wv.evaluate_script(&js));
             }
         }
         ToRust::EvalJs { id, script } => {
             if let Some(pair) = st.windows.get(&id) {
-                let _ = pair.webview.evaluate_script(&script);
+                let _ = pair.webview.as_ref().map(|wv| wv.evaluate_script(&script));
             }
         }
         ToRust::Quit => {

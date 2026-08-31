@@ -1,0 +1,11 @@
+{
+  "name": "gelectron-win32-x64-msvc",
+  "version": "0.1.0",
+  "description": "Gelectron native addon for Windows x64",
+  "main": "gelectron_core.win32-x64-msvc.node",
+  "files": ["gelectron_core.win32-x64-msvc.node"],
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "license": "MIT",
+  "author": "mileswa1q22"
+}

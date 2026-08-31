@@ -1,0 +1,11 @@
+{
+  "name": "gelectron-linux-x64-gnu",
+  "version": "0.1.0",
+  "description": "Gelectron native addon for Linux x64 (GNU)",
+  "main": "gelectron_core.linux-x64-gnu.node",
+  "files": ["gelectron_core.linux-x64-gnu.node"],
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "license": "MIT",
+  "author": "mileswa1q22"
+}
