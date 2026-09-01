@@ -38,7 +38,54 @@ Once installed, run any Electron app with:
 gelectron-core /path/to/electron-app
 ```
 
+### Download a native installer (double-click, no tools needed)
+
+Every new release tag (pushed as `v*`) is pre-compiled in CI and published as
+platform-native, double-clickable installers on the [Releases page]:
+
+| Platform | Installer | What it does |
+|---|---|---|
+| macOS | `Gelectron-<version>-arm64.dmg` / `-x64.dmg` | Contains `Install gelectron.pkg`, which installs the runtime + compat layer to `/usr/local/bin` |
+| Windows | `Gelectron-<version>-x64.exe` | NSIS installer → `C:\Program Files\Gelectron`, adds it to the system PATH, Start Menu + uninstaller |
+| Linux | `Gelectron-<version>-x86_64.AppImage` | Self-contained bundle (includes Node.js + compat), just run it |
+
+After installing, `gelectron /path/to/electron-app` works from anywhere.
+
+> macOS installers are ad-hoc signed (no Developer ID), so on another Mac the
+> first launch shows a Gatekeeper "unidentified developer" warning — right-click
+> → Open to run it.
+
+### Install from GitHub Releases (no npm)
+
+Every new release tag (pushed as `v*`) is pre-compiled in CI and published as
+a self-contained installer archive. Install the latest pre-built runtime with
+a single command — no Rust toolchain, no npm:
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/mileswolfallen2/gelectron/main/scripts/install-release.sh | bash
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/mileswolfallen2/gelectron/main/scripts/install-release.ps1 | iex
+```
+
+The installer downloads `gelectron-<version>-<platform>-<arch>.tar.gz` (or
+`.zip`) from the latest GitHub Release and puts the `gelectron` binary plus
+the JS compatibility layer into `~/.local/bin` (macOS/Linux) or
+`%LOCALAPPDATA%\gelectron\bin` (Windows). Customize with:
+
+```bash
+bash scripts/install-release.sh --version v0.1.1   # specific tag
+bash scripts/install-release.sh --prefix ~/bin     # custom location
+bash scripts/install-release.sh --uninstall        # remove
+```
+
+Archives can also be downloaded directly from the [Releases page] and
+unpacked manually — the binary just needs the `compat/` folder next to it.
+
 > The `gelectron-core` npm package is the recommended distribution channel. Building from source (below) is only needed if you're developing Gelectron itself or want the bleeding-edge version.
+
+[Releases page]: https://github.com/mileswolfallen2/gelectron/releases
 
 ### Prerequisites (for building from source)
 
