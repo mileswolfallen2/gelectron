@@ -1,25 +1,41 @@
 name: Build native binaries
 
+# On every new release (tag push of `v*`), this workflow:
+#   1. builds the gelectron native engine + N-API addons for all platforms,
+#   2. packages portable archives, and
+#   3. builds installers you can simply install:
+#        - macOS:  Gelectron-<ver>-arm64.dmg / Gelectron-<ver>-x64.dmg
+#        - Windows: Gelectron-<ver>-x64.exe / Gelectron-<ver>-arm64.exe
+#        - Linux:   Gelectron-<ver>-x86_64.AppImage / Gelectron-<ver>-aarch64.AppImage
+#
+# Everything is attached to the GitHub Release for that tag.
+
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
-  build:
-    name: Build ${{ matrix.target }}
+  # ── N-API addons (published to npm, also attached to the release) ─────────
+  addon:
+    name: Addon ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-14
             target: aarch64-apple-darwin
-          - os: macos-latest
+          - os: macos-13
             target: x86_64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
           - os: windows-latest
             target: aarch64-pc-windows-msvc
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
 
     runs-on: ${{ matrix.os }}
 
@@ -64,17 +80,18 @@ jobs:
           name: bindings-${{ matrix.target }}
           path: gelectron_core.*.node
 
+  # ── Native engine + portable archives + installers ────────────────────────
   runtime:
-    name: Runtime ${{ matrix.target }}
+    name: Runtime ${{ matrix.platform }}-${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-14
             target: aarch64-apple-darwin
             platform: darwin
             arch: arm64
-          - os: macos-latest
+          - os: macos-13
             target: x86_64-apple-darwin
             platform: darwin
             arch: x64
@@ -86,10 +103,14 @@ jobs:
             target: aarch64-pc-windows-msvc
             platform: win32
             arch: arm64
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             platform: linux
             arch: x64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            platform: linux
+            arch: arm64
 
     runs-on: ${{ matrix.os }}
 
@@ -102,6 +123,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Install Linux system dependencies
         if: matrix.platform == 'linux'
         run: |
@@ -111,7 +137,7 @@ jobs:
       - name: Build gelectron binary
         run: cargo build --release -p gelectron --target ${{ matrix.target }}
 
-      - name: Package release archive
+      - name: Package portable release archive
         run: |
           bash scripts/make-release.sh \
             -v "${{ github.ref_name }}" \
@@ -120,33 +146,46 @@ jobs:
             -b "target/${{ matrix.target }}/release/gelectron" \
             --no-build
 
+      # ── macOS DMG installer ────────────────────────────────────────────────
       - name: Build macOS installer (DMG)
         if: matrix.platform == 'darwin'
         run: bash scripts/pkg/make-dmg.sh -v "${{ github.ref_name }}" -a ${{ matrix.arch }} -b "target/${{ matrix.target }}/release/gelectron" -o dist
 
+      # ── Windows EXE installer (NSIS) ──────────────────────────────────────
       - name: Build Windows installer (EXE)
-        if: matrix.platform == 'win32' && matrix.arch == 'x64'
+        if: matrix.platform == 'win32'
         shell: pwsh
         run: |
           choco install nsis -y --no-progress
-          powershell -File scripts/pkg/make-exe.ps1 -Bin "target/${{ matrix.target }}/release/gelectron.exe" -Compat src/electron -Version "${{ github.ref_name }}" -Arch x64 -Out dist
+          powershell -ExecutionPolicy Bypass -File scripts/pkg/make-exe.ps1 `
+            -Bin "target/${{ matrix.target }}/release/gelectron.exe" `
+            -Compat src/electron `
+            -Version "${{ github.ref_name }}" `
+            -Arch ${{ matrix.arch }} `
+            -Out dist
 
+      # ── Linux AppImage installer ──────────────────────────────────────────
       - name: Build Linux installer (AppImage)
         if: matrix.platform == 'linux'
-        run: bash scripts/pkg/make-appimage.sh -v "${{ github.ref_name }}" -b "target/${{ matrix.target }}/release/gelectron" -o dist
+        run: bash scripts/pkg/make-appimage.sh -v "${{ github.ref_name }}" -b "target/${{ matrix.target }}/release/gelectron" -o dist -a ${{ matrix.arch }}
 
-      - name: Upload installer artifacts
+      - name: List build outputs
+        run: ls -la dist/
+
+      - name: Upload runtime and installer artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: installers-${{ matrix.target }}
+          name: installers-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             dist/gelectron-*
             dist/Gelectron-*
           if-no-files-found: error
 
+  # ── Attach everything to the GitHub Release ───────────────────────────────
   release:
     name: Attach binaries to GitHub Release
-    needs: [build, runtime]
+    needs: [addon, runtime]
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -116,15 +116,58 @@ if (process.env.GELECTRON_LOG) {
 const rustBin = path.join(__dirname, '..', 'target', 'release', 'gelectron');
 const rustBinDebug = path.join(__dirname, '..', 'target', 'debug', 'gelectron');
 
-let executable;
-if (fs.existsSync(rustBin)) {
-  executable = rustBin;
-} else if (fs.existsSync(rustBinDebug)) {
-  executable = rustBinDebug;
+function findNativeBinary() {
+  const candidates = [];
+  if (process.env.GELECTRON_BINARY) candidates.push(process.env.GELECTRON_BINARY);
+  candidates.push(rustBin, rustBinDebug);
+  // npm-installed layout: the binary ships alongside the CLI
+  candidates.push(path.join(__dirname, '..', 'bin', 'gelectron'));
+
+  const platform = process.platform;
+  if (platform === 'win32') {
+    for (const pf of [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], 'C:\\Program Files']) {
+      if (pf) candidates.push(path.join(pf, 'Gelectron', 'gelectron.exe'));
+    }
+    candidates.push(path.join(process.env.LOCALAPPDATA || '', 'gelectron', 'gelectron.exe'));
+  } else {
+    candidates.push('/usr/local/bin/gelectron');
+    candidates.push('/usr/local/lib/gelectron/gelectron');
+    candidates.push('/usr/bin/gelectron');
+    candidates.push('/opt/homebrew/bin/gelectron');
+    candidates.push(path.join(process.env.HOME || '', '.local', 'bin', 'gelectron'));
+  }
+
+  const exeSuffix = platform === 'win32' ? '.exe' : '';
+  for (const c of candidates) {
+    for (const candidate of [c, c + exeSuffix]) {
+      if (candidate && fs.existsSync(candidate)) return candidate;
+    }
+  }
+
+  // PATH lookup (which / where)
+  try {
+    const { execSync } = require('child_process');
+    const cmd = platform === 'win32' ? 'where gelectron' : 'which gelectron';
+    const out = execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    const first = out.split(/\r?\n/).map((s) => s.trim()).find((s) => s.length > 0);
+    if (first && fs.existsSync(first)) return first;
+  } catch (e) {
+    // Not on PATH
+  }
+  return null;
+}
+
+let executable = findNativeBinary();
+if (executable && process.platform !== 'win32') {
+  try {
+    fs.accessSync(executable, fs.constants.X_OK);
+  } catch (e) {
+    fs.chmodSync(executable, 0o755);
+  }
 }
 
 if (executable) {
-  console.log(`[gelectron] Using native binary: ${executable}`);
+  if (process.env.GELECTRON_LOG) console.log(`[gelectron] Using native binary: ${executable}`);
   const child = spawn(executable, args, {
     env,
     stdio: 'inherit',
@@ -132,8 +175,8 @@ if (executable) {
   });
   child.on('exit', (code) => process.exit(code || 0));
 } else {
-  console.log(`[gelectron] Native binary not found. Run: cargo build --release -p gelectron`);
-  console.log(`[gelectron] Falling back to Node.js runtime...\n`);
+  console.log(`[gelectron] Native runtime not found. Install it or run: cargo build --release -p gelectron`);
+  console.log(`[gelectron] Falling back to the Node.js compatibility layer (no native window support)...\n`);
 
   require('../src/electron/runtime.js').run(mainScript, env);
 }

@@ -4,12 +4,13 @@
 # and a Node.js runtime into a single self-contained, downloadable AppImage.
 #
 #   Gelectron-<version>-x86_64.AppImage
+#   Gelectron-<version>-aarch64.AppImage
 #
 # Requires: the gelectron binary (built against webkit2gtk-4.1), compat layer,
 # and network access (downloads Node.js + appimagetool).
 #
 # Usage:
-#   scripts/pkg/make-appimage.sh -v VERSION [--binary PATH] [--compat DIR] [-o DIR]
+#   scripts/pkg/make-appimage.sh -v VERSION [--binary PATH] [--compat DIR] [-o DIR] [-a ARCH]
 
 set -euo pipefail
 
@@ -20,19 +21,21 @@ VERSION=""
 BINARY=""
 COMPAT="$REPO_DIR/src/electron"
 OUT_DIR="$REPO_DIR/dist"
+ARCH="x64"
 
 usage() {
   cat <<'EOF'
   Linux AppImage builder
 
   Usage:
-    scripts/pkg/make-appimage.sh -v VERSION [--binary PATH] [--compat DIR] [-o DIR]
+    scripts/pkg/make-appimage.sh -v VERSION [--binary PATH] [--compat DIR] [-o DIR] [-a ARCH]
 
   Options:
     -v, --version VER    Version string (e.g. 0.1.1)
     -b, --binary PATH    Path to the gelectron binary
     -c, --compat DIR     Path to the compat layer (default: <repo>/src/electron)
     -o, --out DIR        Output directory (default: <repo>/dist)
+    -a, --arch ARCH      x64 | arm64 (default: x64)
     -h, --help           Show this help
 EOF
 }
@@ -43,6 +46,7 @@ while [[ $# -gt 0 ]]; do
     -b|--binary) BINARY="${2:-}"; shift 2 ;;
     -c|--compat) COMPAT="${2:-}"; shift 2 ;;
     -o|--out) OUT_DIR="${2:-}"; shift 2 ;;
+    -a|--arch) ARCH="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "error: unknown option: $1" >&2; usage; exit 1 ;;
   esac
@@ -50,11 +54,21 @@ done
 
 VERSION="${VERSION#v}"
 [[ -n "$VERSION" ]] || { echo "error: --version required" >&2; exit 1; }
+case "$ARCH" in x64|arm64) ;; *) echo "error: unsupported arch: $ARCH" >&2; exit 1 ;; esac
 if [[ -z "$BINARY" ]]; then
   BINARY="$REPO_DIR/target/release/gelectron"
 fi
 [[ -f "$BINARY" ]] || { echo "error: binary not found: $BINARY" >&2; exit 1; }
 [[ -d "$COMPAT" ]] || { echo "error: compat dir not found: $COMPAT" >&2; exit 1; }
+
+# Map to appimg / node arch naming
+if [[ "$ARCH" == "arm64" ]]; then
+  NODE_ARCH="arm64"
+  TARGET_ARCH="aarch64"
+else
+  NODE_ARCH="x64"
+  TARGET_ARCH="x86_64"
+fi
 
 log() { echo "==> $*"; }
 
@@ -76,17 +90,16 @@ install -m 644 "$COMPAT"/*.js "$APPDIR/usr/bin/compat/"
 # Node.js runtime (gelectron's Node mode requires node on PATH)
 NODE_DIR="$STAGE/node"
 if [[ ! -d "$NODE_DIR" ]]; then
-  log "Downloading Node.js v$NODE_VERSION..."
+  log "Downloading Node.js v$NODE_VERSION ($NODE_ARCH)..."
   mkdir -p "$NODE_DIR"
   NODE_ARCHIVE="$STAGE/node.tar.xz"
-  curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o "$NODE_ARCHIVE"
+  curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o "$NODE_ARCHIVE"
   tar -xJf "$NODE_ARCHIVE" -C "$NODE_DIR"
 fi
-install -m 755 "$NODE_DIR"/node-v${NODE_VERSION}-linux-x64/bin/node "$APPDIR/usr/bin/node"
-install -m 644 "$NODE_DIR"/node-v${NODE_VERSION}-linux-x64/lib/libnode.so* "$APPDIR/usr/lib/" 2>/dev/null || true
+install -m 755 "$NODE_DIR"/node-v${NODE_VERSION}-linux-${NODE_ARCH}/bin/node "$APPDIR/usr/bin/node"
 
 mkdir -p "$APPDIR/usr/lib"
-cp "$NODE_DIR"/node-v${NODE_VERSION}-linux-x64/lib/libnode.so* "$APPDIR/usr/lib/" 2>/dev/null || true
+cp "$NODE_DIR"/node-v${NODE_VERSION}-linux-${NODE_ARCH}/lib/libnode.so* "$APPDIR/usr/lib/" 2>/dev/null || true
 
 # ── AppImage metadata ───────────────────────────────────────────────────────
 
@@ -119,19 +132,19 @@ fi
 
 TOOL="$STAGE/appimagetool"
 if [[ ! -f "$TOOL" ]]; then
-  log "Downloading appimagetool..."
-  curl -fsSL "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" -o "$TOOL"
+  log "Downloading appimagetool ($TARGET_ARCH)..."
+  curl -fsSL "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${TARGET_ARCH}.AppImage" -o "$TOOL"
 fi
 chmod +x "$TOOL"
 
 # ── Build ───────────────────────────────────────────────────────────────────
 
 mkdir -p "$OUT_DIR"
-APPIMAGE_NAME="Gelectron-$VERSION-x86_64.AppImage"
+APPIMAGE_NAME="Gelectron-$VERSION-$TARGET_ARCH.AppImage"
 APPIMAGE_PATH="$OUT_DIR/$APPIMAGE_NAME"
 
 export VERSION="$VERSION"
-export ARCH="x86_64"
+export ARCH="$TARGET_ARCH"
 # Run appimagetool without FUSE (Ubuntu 24.04+ runners don't ship libfuse2)
 export APPIMAGE_EXTRACT_AND_RUN=1
 log "Creating $APPIMAGE_NAME ..."

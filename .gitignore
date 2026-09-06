@@ -25,11 +25,7 @@ dist/
 # Packager cache
 .gelectron-cache/
 
-# Electron
-electron/
-
-# Electron compat layer (generated)
-src/electron/
+# npm platform package stubs
 npm/darwin-arm64/
 
 # OS

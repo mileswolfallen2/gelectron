@@ -4,7 +4,9 @@
   "description": "Firefox-engine alternative to Electron, powered by Servo",
   "main": "src/electron/index.js",
   "bin": {
-    "gelectron-core": "./cli/gelectron.js"
+    "gelectron": "./cli/gelectron.js",
+    "gelectron-core": "./cli/gelectron.js",
+    "gelectron-packager": "./packager/bin/gelectron-packager.js"
   },
   "scripts": {
     "build": "napi build --platform --release --package gelectron-core",

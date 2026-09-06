@@ -80,8 +80,10 @@ esac
 if [[ "$UNINSTALL" == "1" ]]; then
   rm -f "$PREFIX/gelectron"
   rm -f "$PREFIX/gelectron.exe"
+  rm -f "$PREFIX/node"
+  rm -f "$PREFIX/node.exe"
   rm -rf "$PREFIX/compat"
-  echo "Removed $PREFIX/gelectron and $PREFIX/compat"
+  echo "Removed $PREFIX/gelectron, $PREFIX/node and $PREFIX/compat"
   exit 0
 fi
 
@@ -143,6 +145,37 @@ install -m 755 "$BIN_ABS" "$PREFIX/$(basename "$BIN_ABS")"
 if [[ -d "$STAGE/compat" ]]; then
   mkdir -p "$PREFIX/compat"
   install -m 644 "$STAGE"/compat/*.js "$PREFIX/compat/"
+fi
+
+# Download a private Node.js runtime next to the binary so `gelectron <app>`
+# works on machines that don't have Node installed. The binary's runtime
+# resolution checks its own directory first, so this private copy wins.
+NODE_VERSION="20.18.1"
+NODE_INSTALLED="$PREFIX/node"
+if [[ "$PLATFORM" == "win32" ]]; then NODE_INSTALLED="$PREFIX/node.exe"; fi
+if [[ ! -x "$NODE_INSTALLED" ]]; then
+  echo "==> Installing private Node.js v$NODE_VERSION ..."
+  case "$PLATFORM-$ARCH" in
+    darwin-*)  NODE_PLATFORM="darwin-$ARCH"; NODE_EXT="tar.gz" ;;
+    linux-*)   NODE_PLATFORM="linux-$ARCH";  NODE_EXT="tar.xz" ;;
+    win32-*)   NODE_PLATFORM="win-$ARCH";    NODE_EXT="zip" ;;
+  esac
+  NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${NODE_PLATFORM}.${NODE_EXT}"
+  NODE_ARCHIVE="$(mktemp /tmp/gelectron-node.XXXXXX.${NODE_EXT})"
+  curl -fsSL -L "$NODE_URL" -o "$NODE_ARCHIVE"
+  NODE_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/gelectron-node-stage.XXXXXX")"
+  case "$NODE_EXT" in
+    zip)     unzip -qo "$NODE_ARCHIVE" -d "$NODE_STAGE" ;;
+    tar.gz)  tar -xzf "$NODE_ARCHIVE" -C "$NODE_STAGE" ;;
+    tar.xz)  tar -xJf "$NODE_ARCHIVE" -C "$NODE_STAGE" ;;
+  esac
+  NODE_BIN="$(find "$NODE_STAGE" -type f \( -name 'node.exe' -o -name 'node' \) | head -n1)"
+  if [[ -n "$NODE_BIN" ]]; then
+    install -m 755 "$NODE_BIN" "$NODE_INSTALLED"
+  else
+    echo "  warning: could not install private Node.js — apps will require a system Node" >&2
+  fi
+  rm -rf "$NODE_STAGE" "$NODE_ARCHIVE"
 fi
 
 # Downloaded-from-GitHub binaries carry a quarantine attribute on macOS and

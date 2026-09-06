@@ -49,12 +49,14 @@ Section "Install"
   SetOutPath "$INSTDIR"
 
   File "gelectron.exe"
+  ; Bundled Node.js runtime so packaged apps run with no system Node install
+  File "node.exe"
   File /r "compat"
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   CreateDirectory "$SMPROGRAMS\${APPNAME}"
-  CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\gelectron.exe"
+  CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME} CLI.lnk" "$INSTDIR\gelectron.exe"
 
   WriteRegStr HKLM "${UNINST_KEY}" "DisplayName" "${APPNAME}"
   WriteRegStr HKLM "${UNINST_KEY}" "DisplayVersion" "${VERSION}"
@@ -80,7 +82,7 @@ Section "Uninstall"
   WriteRegExpandStr ${ENV_KEY} "Path" $1
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment"
 
-  Delete "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk"
+  Delete "$SMPROGRAMS\${APPNAME}\${APPNAME} CLI.lnk"
   RMDir "$SMPROGRAMS\${APPNAME}"
 
   DeleteRegKey HKLM "${UNINST_KEY}"

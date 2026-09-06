@@ -70,6 +70,14 @@ class NativeBridge extends EventEmitter {
     });
   }
 
+  // Generic request to the native process: request(type, payload) where
+  // `type` matches a ToRust variant. Resolves with the JSON response from the
+  // native side (or null when running without the native binary).
+  request(type, payload = {}) {
+    if (!isNative) return Promise.resolve(null);
+    return this._request({ type, ...payload });
+  }
+
   _resolveRequest(requestId, result, error) {
     const pending = this._pendingRequests[requestId];
     if (pending) {

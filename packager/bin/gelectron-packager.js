@@ -73,7 +73,59 @@ function findCompatLayer(startDir) {
   while (dir !== path.dirname(dir)) {
     const p = path.join(dir, 'src', 'electron');
     if (fs.existsSync(p)) return p;
+    // Some installs place the compat layer as `compat/` next to the binary
+    const compat = path.join(dir, 'compat', 'index.js');
+    if (fs.existsSync(compat)) return path.join(dir, 'compat');
     dir = path.dirname(dir);
+  }
+  return null;
+}
+
+// Compat layer that lives alongside a found binary (installed runtime layout
+// where binary + compat live in the same directory).
+function findCompatNextToBinary(binaryPath) {
+  const dir = path.dirname(binaryPath);
+  const p = path.join(dir, 'compat', 'index.js');
+  if (fs.existsSync(p)) return path.join(dir, 'compat');
+  return null;
+}
+
+function isExecutableName(binPath) {
+  if (!binPath) return false;
+  const base = path.basename(binPath).toLowerCase();
+  return /^gelectron(\.exe)?$/.test(base);
+}
+
+// Locate a gelectron runtime installed through the official installers
+// (DMG / EXE / AppImage) rather than built from source. This lets
+// `gelectron-packager` bundle a runtime that never has to be recompiled.
+function findInstalledGelectron() {
+  const platform = process.platform;
+  const candidates = [];
+  if (platform === 'win32') {
+    for (const pf of [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], 'C:\\Program Files']) {
+      if (pf) candidates.push(path.join(pf, 'Gelectron', 'gelectron.exe'));
+    }
+    candidates.push(path.join(process.env.LOCALAPPDATA || '', 'gelectron', 'gelectron.exe'));
+  } else {
+    candidates.push('/usr/local/bin/gelectron');
+    candidates.push('/usr/local/lib/gelectron/gelectron');
+    candidates.push('/usr/bin/gelectron');
+    candidates.push('/opt/homebrew/bin/gelectron');
+    candidates.push(path.join(process.env.HOME || '', '.local', 'bin', 'gelectron'));
+    candidates.push(path.join(process.env.HOME || '', '.gelectron', 'bin', 'gelectron'));
+  }
+  for (const p of candidates) {
+    if (p && fs.existsSync(p) && isExecutableName(p)) return p;
+  }
+  // PATH lookup: `which gelectron` / `where gelectron`
+  try {
+    const which = platform === 'win32' ? 'where' : 'which';
+    const out = execSync(`${which} gelectron`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const first = String(out).split(/\r?\n/).map((s) => s.trim()).find((s) => s.length > 0 && isExecutableName(s));
+    if (first && fs.existsSync(first)) return first;
+  } catch (e) {
+    // Not on PATH
   }
   return null;
 }
@@ -92,7 +144,8 @@ function findGelectronFromAncestors(appDir) {
     }
     dir = path.dirname(dir);
   }
-  return null;
+  // Fall back to a system-installed gelectron runtime
+  return findInstalledGelectron();
 }
 
 async function getNodeBinary(platform, arch, cacheDir) {
@@ -172,6 +225,8 @@ ${iconKey}  <key>CFBundleDisplayName</key>
   <string>${exeName}</string>
   <key>CFBundleIdentifier</key>
   <string>com.gelectron.${name.toLowerCase().replace(/[^a-z0-9]/g, '')}</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
   <key>CFBundleName</key>
   <string>${name}</string>
   <key>CFBundlePackageType</key>
@@ -180,6 +235,10 @@ ${iconKey}  <key>CFBundleDisplayName</key>
   <string>${version}</string>
   <key>CFBundleVersion</key>
   <string>${version}</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSPrincipalClass</key>
+  <string>NSApplication</string>
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSRequiresAquaSystemAppearance</key>
@@ -452,7 +511,7 @@ async function packageMac(appDir, outDir, name, version, gelectronBin, nodeDir, 
   }
 
   // Copy src/electron compat layer
-  const compatDir = findCompatLayer(appDir) || findCompatLayer(path.dirname(gelectronBin));
+  const compatDir = findCompatLayer(appDir) || findCompatNextToBinary(gelectronBin) || findCompatLayer(path.dirname(gelectronBin));
   if (compatDir) {
     copyDirSync(compatDir, path.join(macosDir, 'compat'));
   }
@@ -515,7 +574,7 @@ async function packageWindows(appDir, outDir, name, version, gelectronBin, nodeD
   }
 
   // Copy compat layer
-  const compatDirWin = findCompatLayer(appDir) || findCompatLayer(path.dirname(gelectronBin));
+  const compatDirWin = findCompatLayer(appDir) || findCompatNextToBinary(gelectronBin) || findCompatLayer(path.dirname(gelectronBin));
   if (compatDirWin) {
     copyDirSync(compatDirWin, path.join(outDir, 'compat'));
   }
@@ -592,7 +651,7 @@ async function packageLinux(appDir, outDir, name, version, gelectronBin, nodeDir
   }
 
   // Copy compat layer
-  const compatDirLinux = findCompatLayer(appDir) || findCompatLayer(path.dirname(gelectronBin));
+  const compatDirLinux = findCompatLayer(appDir) || findCompatNextToBinary(gelectronBin) || findCompatLayer(path.dirname(gelectronBin));
   if (compatDirLinux) {
     copyDirSync(compatDirLinux, path.join(outDir, 'compat'));
   }

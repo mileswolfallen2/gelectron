@@ -18,7 +18,7 @@ Electron bundles Chromium — ~300 MB per app with 500+ MB RSS. Gelectron uses t
 | Language | C++ / Node.js | Rust / Node.js |
 | API Compatibility | Native | Drop-in replacement |
 | Node.js Integration | Built-in | Spawned child process or WebView-only |
-| Auto Updater | Built-in | Stub (no-update-safe fallback) |
+| Auto Updater | Built-in | Full (electron-updater compatible)
 
 ## Quick Start
 
@@ -32,10 +32,13 @@ npm install -g gelectron-core
 
 This installs the `gelectron-core` package, which bundles the pre-built native binary and the JS compatibility layer, and automatically pulls in the platform-specific addon for your operating system and CPU architecture (see the [package on npm](https://www.npmjs.com/package/gelectron-core)).
 
-Once installed, run any Electron app with:
+Once installed, run any Electron app exactly like Electron — the `gelectron` command works out of the box (the package also exposes `gelectron-core` and `gelectron-packager`):
 
 ```bash
-gelectron-core /path/to/electron-app
+gelectron /path/to/electron-app
+gelectron .              # app in the current directory (reads package.json "main")
+gelectron main.js        # a bare main-process script
+gelectron --version
 ```
 
 ### Download a native installer (double-click, no tools needed)
@@ -45,11 +48,15 @@ platform-native, double-clickable installers on the [Releases page]:
 
 | Platform | Installer | What it does |
 |---|---|---|
-| macOS | `Gelectron-<version>-arm64.dmg` / `-x64.dmg` | Contains `Install gelectron.pkg`, which installs the runtime + compat layer to `/usr/local/bin` |
-| Windows | `Gelectron-<version>-x64.exe` | NSIS installer → `C:\Program Files\Gelectron`, adds it to the system PATH, Start Menu + uninstaller |
-| Linux | `Gelectron-<version>-x86_64.AppImage` | Self-contained bundle (includes Node.js + compat), just run it |
+| macOS | `Gelectron-<version>-arm64.dmg` / `-x64.dmg` | Contains `Install gelectron.pkg`, which installs the runtime + compat layer **plus a private Node.js** to `/usr/local/lib/gelectron` and symlinks `gelectron` into `/usr/local/bin` |
+| Windows | `Gelectron-<version>-x64.exe` / `-arm64.exe` | NSIS installer → `C:\Program Files\Gelectron` (runtime + compat + private Node.js), adds it to the system PATH, Start Menu + uninstaller |
+| Linux | `Gelectron-<version>-x86_64.AppImage` / `-aarch64.AppImage` | Fully self-contained (runtime + compat + private Node.js), just run it |
 
-After installing, `gelectron /path/to/electron-app` works from anywhere.
+After installing, `gelectron /path/to/electron-app` works from anywhere, and no
+system Node.js install is required — every installer bundles its own runtime.
+
+Apps packaged with `gelectron-packager` are equally self-contained: double-click
+a packaged app and it runs with no gelectron and no Node.js installed.
 
 > macOS installers are ad-hoc signed (no Developer ID), so on another Mac the
 > first launch shows a Gatekeeper "unidentified developer" warning — right-click
@@ -112,7 +119,11 @@ cargo run --release -p gelectron -- /path/to/electron-app
 
 ### CLI (Node.js fallback)
 
-If you don't want to build the Rust binary, the CLI can fall back to a pure-Node.js shim:
+The `gelectron` command automatically locates the native runtime — the release
+build, an npm/installer-installed binary (`PATH`, `/usr/local/bin`,
+`/usr/local/lib/gelectron`, `Program Files\Gelectron`, etc.) or a fresh
+`target/{release,debug}/gelectron`. If none is found it falls back to a
+pure-Node.js shim:
 
 ```bash
 node cli/gelectron.js /path/to/electron-app
@@ -207,14 +218,15 @@ When the native binary is not built, the CLI falls back to pure Node.js:
 
 | Module | Status |
 |---|---|
-| `screen` | `getPrimaryDisplay()` (stub) |
-| `clipboard` | Full API (`readText`/`writeText`/`readHTML`/`readRTF`/`readImage`/`readBookmark`/`readFindText`/`clear`/`availableFormats`/`has`) |
+| `screen` | Native display enumeration (`getAllDisplays`, `getPrimaryDisplay`, `getDisplayMatching`, …) |
+| `clipboard` | Full API (`readText`/`writeText`/`readHTML`/`writeHTML`/`readBookmark`/`readFindText`/`availableFormats`) |
+| `nativeTheme` | `shouldUseDarkColors`, `themeSource`, `themes` (native-backed when available) |
 | `systemPreferences` | Basic stubs |
 | `powerMonitor` | Event stubs |
 | `globalShortcut` | Register/unregister stubs |
 | `session` | Cookies, protocol, permissions (stub) |
 | `net` | `fetch()` proxy |
-| `autoUpdater` | No-op stub (reports "no update available") |
+| `autoUpdater` | Full (sha512-verified, atomic apply) |
 
 ## Demo App
 
@@ -277,9 +289,12 @@ gelectron/
 │       ├── shell.js                  # Shell operations
 │       ├── notification.js           # Notifications
 │       ├── native-image.js           # Image handling
+│       ├── clipboard.js              # Clipboard
+│       ├── screen.js                 # Display enumeration
+│       ├── nativeTheme.js            # Dark mode / theme
 │       ├── safe-storage.js           # Encryption
 │       ├── web-contents.js           # webContents utilities
-│       ├── auto-updater.js           # autoUpdater stub
+│       ├── auto-updater.js           # autoUpdater (electron-updater compatible)
 │       ├── native-bridge.js          # IPC to Rust binary
 │       ├── preload-loader.js         # Preload injection
 │       └── runtime.js                # Node.js fallback runtime
@@ -338,7 +353,9 @@ gelectron-packager --dir ./my-app --name MyApp --platform linux --arch x64
 
 ### What the packager does
 
-1. Finds your built gelectron binary (`target/release/gelectron`)
+1. Finds your gelectron runtime — the built binary (`target/release/gelectron`),
+   or any gelectron installed through the installers/npm (PATH,
+   `/usr/local/lib/gelectron`, `Program Files\Gelectron`, …)
 2. Downloads a bundled Node.js runtime (~20 MB) for the target platform
 3. Copies your app source and `node_modules`
 4. Includes the Electron compatibility layer (`src/electron/`)

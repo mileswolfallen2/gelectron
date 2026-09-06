@@ -1998,18 +1998,80 @@ fn handle_to_rust(
     }
 }
 
+// Resolve the Node.js runtime the gelectron engine should spawn. Resolution
+// order (first hit wins):
+//
+//   1. GELECTRON_NODE env override (explicit, e.g. from a launcher script)
+//   2. Node bundled next to the gelectron binary. This is what makes packaged
+//      apps (MyApp.app, Windows dir, AppImage) fully self-contained: the
+//      packager places node / node.exe alongside the engine, so no system-wide
+//      Node install is required.
+//   3. PATH lookup (which on Unix, where on Windows)
+//   4. Known per-platform install locations (incl. the runtime installers)
 fn which_node() -> Option<String> {
-    Command::new("which")
-        .arg("node")
-        .output()
-        .ok()
-        .and_then(|o| if o.status.success() { String::from_utf8(o.stdout).ok().map(|s| s.trim().to_string()) } else { None })
-        .or_else(|| {
-            for p in &["/usr/local/bin/node", "/opt/homebrew/bin/node", "/usr/bin/node"] {
-                if std::path::Path::new(p).exists() { return Some(p.to_string()); }
+    let node_exe = if cfg!(windows) { "node.exe" } else { "node" };
+
+    if let Ok(override_path) = std::env::var("GELECTRON_NODE") {
+        if !override_path.is_empty() && std::path::Path::new(&override_path).exists() {
+            return Some(override_path);
+        }
+    }
+
+    // 1. Bundled runtime: node sits next to the gelectron engine binary
+    if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())) {
+        for candidate in &[exe_dir.join(node_exe), exe_dir.join("bin").join(node_exe)] {
+            if candidate.exists() {
+                return Some(candidate.display().to_string());
             }
-            None
-        })
+        }
+    }
+
+    // 2. PATH lookup (where works on Windows, which on Unix)
+    let lookup = if cfg!(windows) { "where" } else { "which" };
+    if let Ok(out) = Command::new(lookup).arg(node_exe).output() {
+        if out.status.success() {
+            if let Ok(s) = String::from_utf8(out.stdout) {
+                let first = s.lines().next().map(|l| l.trim().to_string());
+                if let Some(p) = first {
+                    if !p.is_empty() && std::path::Path::new(&p).exists() {
+                        return Some(p);
+                    }
+                }
+            }
+        }
+    } else if let Ok(out) = Command::new("which").arg(node_exe).output() {
+        // Fallback: `which` may not exist on some minimal Windows shells
+        if out.status.success() {
+            if let Ok(s) = String::from_utf8(out.stdout) {
+                let first = s.lines().next().map(|l| l.trim().to_string());
+                if let Some(p) = first {
+                    if !p.is_empty() && std::path::Path::new(&p).exists() {
+                        return Some(p);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Known install locations (flat list, checked in order)
+    let known = [
+        "/usr/local/bin/node",
+        "/opt/homebrew/bin/node",
+        "/usr/bin/node",
+        // Gelectron runtime installers bundle node next to the engine
+        "/usr/local/lib/gelectron/node",
+        "/usr/local/lib/gelectron/node.exe",
+        "/usr/lib/gelectron/node",
+        "C:\\Program Files\\Gelectron\\node.exe",
+        "C:\\Program Files (x86)\\Gelectron\\node.exe",
+    ];
+    for p in &known {
+        if std::path::Path::new(p).exists() {
+            return Some(p.to_string());
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]

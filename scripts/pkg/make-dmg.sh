@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 #
-# Build the macOS installer: a .pkg (installs the gelectron runtime +
-# compat layer to /usr/local/bin) wrapped in a .dmg for distribution.
+# Build the macOS installer: a .pkg wrapped in a .dmg for distribution.
+#
+# The package is fully self-contained — it installs the gelectron runtime, the
+# Electron compatibility layer AND a private Node.js runtime into
+# /usr/local/lib/gelectron and symlinks gelectron into /usr/local/bin. Apps run
+# with `gelectron <app>` with no other runtime installed on the machine.
 #
 #   Gelectron-<version>-<arch>.dmg
 #     └── Install gelectron.pkg   (double-click, runs macOS Installer as root)
@@ -18,6 +22,7 @@ ARCH=""
 BINARY=""
 COMPAT="$REPO_DIR/src/electron"
 OUT_DIR="$REPO_DIR/dist"
+NODE_VERSION="20.18.1"
 
 usage() {
   cat <<'EOF'
@@ -64,9 +69,9 @@ log() { echo "==> $*"; }
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/gelectron-dmg.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 
-# ── Payload root (what pkgbuild installs into /usr/local/bin) ─────────────
+# ── Payload root: what pkgbuild installs into /usr/local/lib/gelectron ─────
 
-PAYLOAD="$STAGE/gelectron"
+PAYLOAD="$STAGE/payload/usr/local/lib/gelectron"
 mkdir -p "$PAYLOAD"
 
 log "Staging payload..."
@@ -74,21 +79,46 @@ install -m 755 "$BINARY" "$PAYLOAD/gelectron"
 mkdir -p "$PAYLOAD/compat"
 install -m 644 "$COMPAT"/*.js "$PAYLOAD/compat/"
 
+# Private Node.js runtime so the installed CLI works with no system Node
+NODE_ARCH="$( [[ "$ARCH" == "arm64" ]] && echo arm64 || echo x64 )"
+NODE_ARCHIVE="$STAGE/node.tar.gz"
+if [[ ! -f "$NODE_ARCHIVE" ]]; then
+  log "Downloading Node.js v$NODE_VERSION..."
+  curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-${NODE_ARCH}.tar.gz" -o "$NODE_ARCHIVE"
+fi
+log "Extracting Node.js..."
+mkdir -p "$STAGE/node"
+tar -xzf "$NODE_ARCHIVE" -C "$STAGE/node"
+install -m 755 "$STAGE/node"/node-v${NODE_VERSION}-darwin-${NODE_ARCH}/bin/node "$PAYLOAD/node"
+
 if command -v codesign >/dev/null 2>&1; then
   log "Ad-hoc signing binary..."
   codesign --force --sign - "$PAYLOAD/gelectron" 2>/dev/null || echo "  (warning: codesign failed)"
 fi
 
+# ── Postinstall script: symlink /usr/local/bin/gelectron → runtime ─────────
+
+SCRIPTS="$STAGE/scripts"
+mkdir -p "$SCRIPTS"
+cat > "$SCRIPTS/postinstall" <<'EOF'
+#!/bin/bash
+set -e
+ln -sf /usr/local/lib/gelectron/gelectron /usr/local/bin/gelectron
+exit 0
+EOF
+chmod +x "$SCRIPTS/postinstall"
+
 # ── Component package ───────────────────────────────────────────────────────
 
 PKG="$STAGE/Install gelectron.pkg"
-log "Building package (installs to /usr/local/bin)..."
+log "Building package (installs to /usr/local/lib/gelectron)..."
 pkgbuild \
-  --root "$PAYLOAD" \
+  --root "$STAGE/payload" \
+  --scripts "$SCRIPTS" \
   --identifier "com.gelectron.runtime.$ARCH" \
   --version "$VERSION" \
   --ownership recommended \
-  --install-location /usr/local/bin \
+  --install-location / \
   "$PKG"
 
 # ── DMG ────────────────────────────────────────────────────────────────────

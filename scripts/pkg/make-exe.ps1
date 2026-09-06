@@ -1,6 +1,7 @@
 # Gelectron Windows installer builder (NSIS)
 #
-# Stages the payload and compiles the installer EXE with makensis:
+# Stages the payload (gelectron runtime + bundled Node.js + compat layer) and
+# compiles the installer EXE with makensis:
 #   Gelectron-<version>-<arch>.exe
 #
 # Usage:
@@ -17,7 +18,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Version,
     [string]$Arch = "x64",
     [string]$Out = "dist",
-    [string]$NsiPath = "scripts/pkg/gelectron.nsi"
+    [string]$NsiPath = "scripts/pkg/gelectron.nsi",
+    [string]$NodeVersion = "20.18.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,6 +36,19 @@ try {
     Copy-Item $Bin (Join-Path $Stage "gelectron.exe") -Force
     Copy-Item -Recurse -Force $Compat (Join-Path $Stage "compat")
     Copy-Item $NsiPath (Join-Path $Stage "gelectron.nsi") -Force
+
+    # Bundled Node.js runtime so the installed CLI works with no system Node.
+    $NodeArch = if ($Arch -eq "arm64") { "arm64" } else { "x64" }
+    $NodeArchive = Join-Path $Stage "node.zip"
+    $NodeUrl = "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-win-$NodeArch.zip"
+    Write-Host "==> Downloading Node.js v$NodeVersion ($NodeArch)..."
+    Invoke-WebRequest -Uri $NodeUrl -OutFile $NodeArchive -UseBasicParsing
+
+    $NodeExtract = Join-Path $Stage "node"
+    Expand-Archive -Path $NodeArchive -DestinationPath $NodeExtract -Force
+    $NodeExe = Get-ChildItem $NodeExtract -Recurse -Filter node.exe | Select-Object -First 1
+    if (-not $NodeExe) { throw "node.exe not found in Node.js archive" }
+    Copy-Item $NodeExe.FullName (Join-Path $Stage "node.exe") -Force
 
     Write-Host "==> Compiling installer (makensis)..."
     Push-Location $Stage
