@@ -4,13 +4,18 @@
  * Gelectron - Preload script injection
  *
  * This script is injected into the renderer process before the page loads.
- * It provides the ipcRenderer and contextBridge APIs to preload scripts.
+ * It provides the ipcRenderer and contextBridge APIs to preload scripts,
+ * plus a Node-compatible `process` polyfill for WebView-only mode.
  */
+
+const { processPolyfillScript } = require('./process');
 
 function getPreloadScript() {
   return `
 (function() {
   'use strict';
+
+${processPolyfillScript()}
 
   // Expose gelectron preload APIs
   window.__gelectron = window.__gelectron || {};

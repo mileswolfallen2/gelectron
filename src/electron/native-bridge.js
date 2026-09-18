@@ -148,6 +148,50 @@ class NativeBridge extends EventEmitter {
     this._send({ type: 'maximize', id });
   }
 
+  unmaximizeWindow(id) {
+    this._send({ type: 'unmaximize', id });
+  }
+
+  goBack(id) {
+    this._send({ type: 'go-back', id });
+  }
+
+  goForward(id) {
+    this._send({ type: 'go-forward', id });
+  }
+
+  restoreWindow(id) {
+    this._send({ type: 'restore', id });
+  }
+
+  openDevTools(id) {
+    this._send({ type: 'open-devtools', id });
+  }
+
+  closeDevTools(id) {
+    this._send({ type: 'close-devtools', id });
+  }
+
+  toggleDevTools(id) {
+    this._send({ type: 'toggle-devtools', id });
+  }
+
+  inspectElement(id, x, y) {
+    this._send({ type: 'inspect-element', id, x: x || 0, y: y || 0 });
+  }
+
+  printPage(id) {
+    this._send({ type: 'print-page', id });
+  }
+
+  capturePage(id) {
+    return this.request('capture-page', { id });
+  }
+
+  printToPdf(id, options) {
+    return this.request('print-to-pdf', { id, options: options || {} });
+  }
+
   closeWindow(id) {
     this._send({ type: 'close', id });
   }

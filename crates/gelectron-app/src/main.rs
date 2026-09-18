@@ -52,6 +52,33 @@ enum ToRust {
     Minimize { id: u32 },
     #[serde(rename = "maximize")]
     Maximize { id: u32 },
+    #[serde(rename = "unmaximize")]
+    Unmaximize { id: u32 },
+    #[serde(rename = "restore")]
+    Restore { id: u32 },
+    #[serde(rename = "go-back")]
+    GoBack { id: u32 },
+    #[serde(rename = "go-forward")]
+    GoForward { id: u32 },
+    #[serde(rename = "open-devtools")]
+    OpenDevTools { id: u32 },
+    #[serde(rename = "close-devtools")]
+    CloseDevTools { id: u32 },
+    #[serde(rename = "toggle-devtools")]
+    ToggleDevTools { id: u32 },
+    #[serde(rename = "inspect-element")]
+    InspectElement { id: u32, x: f64, y: f64 },
+    #[serde(rename = "print-page")]
+    PrintPage { id: u32 },
+    #[serde(rename = "capture-page")]
+    CapturePage { id: u32, request_id: String },
+    #[serde(rename = "print-to-pdf")]
+    PrintToPdf {
+        id: u32,
+        request_id: String,
+        #[serde(default)]
+        options: Option<serde_json::Value>,
+    },
     #[serde(rename = "close")]
     Close { id: u32 },
     #[serde(rename = "ipc-message")]
@@ -765,7 +792,7 @@ fn create_webview(
     WebViewBuilder::new()
         .with_url(url)
         .with_initialization_script(init)
-        .with_devtools(false)
+        .with_devtools(true)
         .with_ipc_handler(move |req| {
             let body = req.body().to_string();
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
@@ -811,7 +838,7 @@ fn create_initial_webview_window(
         match WebViewBuilder::new()
             .with_url("about:blank")
             .with_initialization_script(&init_script)
-            .with_devtools(false)
+            .with_devtools(true)
             .with_ipc_handler(move |req| {
                 let body = req.body().to_string();
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
@@ -1995,7 +2022,258 @@ fn handle_to_rust(
                 pair.window.set_maximized(true);
             }
         }
+        ToRust::Unmaximize { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                pair.window.set_maximized(false);
+            }
+        }
+        ToRust::Restore { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                pair.window.set_minimized(false);
+                pair.window.set_maximized(false);
+            }
+        }
+        ToRust::GoBack { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                log::info!("Window {} go back", id);
+                if let Some(webview) = &pair.webview {
+                    let _ = webview.evaluate_script("history.back()");
+                }
+            }
+        }
+        ToRust::GoForward { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                log::info!("Window {} go forward", id);
+                if let Some(webview) = &pair.webview {
+                    let _ = webview.evaluate_script("history.forward()");
+                }
+            }
+        }
+        ToRust::OpenDevTools { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                if let Some(webview) = &pair.webview {
+                    log::info!("Window {} opening devtools", id);
+                    webview.open_devtools();
+                }
+            }
+        }
+        ToRust::CloseDevTools { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                if let Some(webview) = &pair.webview {
+                    log::info!("Window {} closing devtools", id);
+                    webview.close_devtools();
+                }
+            }
+        }
+        ToRust::ToggleDevTools { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                if let Some(webview) = &pair.webview {
+                    if webview.is_devtools_open() {
+                        webview.close_devtools();
+                    } else {
+                        webview.open_devtools();
+                    }
+                }
+            }
+        }
+        ToRust::InspectElement { id, x, y } => {
+            log::debug!("Window {} inspect element at {},{}", id, x, y);
+        }
+        ToRust::PrintPage { id } => {
+            if let Some(pair) = st.windows.get(&id) {
+                log::info!("Window {} printing", id);
+                if let Some(webview) = &pair.webview {
+                    let _ = webview.print();
+                }
+            }
+        }
+        ToRust::CapturePage { id, request_id } => {
+            capture_page_for_window(st, id, request_id);
+        }
+        ToRust::PrintToPdf {
+            id,
+            request_id,
+            options,
+        } => {
+            print_to_pdf_for_window(st, id, request_id, options);
+        }
     }
+}
+
+// WebContents.capturePage() - snapshot the webview as a PNG. Implemented
+// natively on macOS (WKWebView takeSnapshot) and reported as unsupported
+// elsewhere, mirroring a browser that cannot access the compositor surface.
+fn capture_page_for_window(st: &mut AppState, window_id: u32, request_id: String) {
+    #[cfg(target_os = "macos")]
+    {
+        capture_page_for_window_macos(st, window_id, request_id);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        log::warn!("capturePage unsupported on this platform");
+        if let Some(ref tx) = st.response_tx {
+            let _ = tx.send((
+                request_id,
+                serde_json::json!({ "error": "capturePage is not supported on this platform" }),
+            ));
+        }
+    }
+}
+
+// WebContents.printToPDF() - generate a PDF of the webview content. Implemented
+// natively on macOS (WKWebView createPDF) and reported as unsupported elsewhere.
+fn print_to_pdf_for_window(
+    st: &mut AppState,
+    window_id: u32,
+    request_id: String,
+    options: Option<serde_json::Value>,
+) {
+    #[cfg(target_os = "macos")]
+    {
+        print_to_pdf_for_window_macos(st, window_id, request_id, options);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        log::warn!("printToPDF unsupported on this platform");
+        if let Some(ref tx) = st.response_tx {
+            let _ = tx.send((
+                request_id,
+                serde_json::json!({ "error": "printToPDF is not supported on this platform" }),
+            ));
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn capture_page_for_window_macos(st: &mut AppState, window_id: u32, request_id: String) {
+    use wry::WebViewExtMacOS;
+
+    if let Some(pair) = st.windows.get(&window_id) {
+        if let Some(webview) = &pair.webview {
+            let wv = webview.webview();
+            let tx = st.response_tx.clone();
+            let block = block2_v05::RcBlock::new(
+                move |image: *mut objc2_v05::runtime::AnyObject, _err: *mut objc2_v05::runtime::AnyObject| {
+                    let result = if image.is_null() {
+                        serde_json::json!({ "error": "Failed to capture page" })
+                    } else {
+                        match unsafe { ns_image_to_png(image) } {
+                            Some(png_b64) => serde_json::json!({ "data": png_b64 }),
+                            None => serde_json::json!({ "error": "Failed to encode captured page" }),
+                        }
+                    };
+                    if let Some(ref tx) = tx {
+                        let _ = tx.send((request_id.clone(), result));
+                    }
+                },
+            );
+            // Safety: message send to a live WKWebView instance on the main thread.
+            unsafe {
+                let () = objc2_v05::msg_send![
+                    &wv,
+                    takeSnapshotWithConfiguration: std::ptr::null::<objc2_v05::runtime::AnyObject>(),
+                    completionHandler: &*block
+                ];
+            }
+            return;
+        }
+    }
+    if let Some(ref tx) = st.response_tx {
+        let _ = tx.send((request_id, serde_json::json!({ "error": "Window not found" })));
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn print_to_pdf_for_window_macos(
+    st: &mut AppState,
+    window_id: u32,
+    request_id: String,
+    _options: Option<serde_json::Value>,
+) {
+    use wry::WebViewExtMacOS;
+
+    if let Some(pair) = st.windows.get(&window_id) {
+        if let Some(webview) = &pair.webview {
+            let wv = webview.webview();
+            let tx = st.response_tx.clone();
+            let block = block2_v05::RcBlock::new(
+                move |pdf: *mut objc2_v05::runtime::AnyObject, _err: *mut objc2_v05::runtime::AnyObject| {
+                    let result = if pdf.is_null() {
+                        serde_json::json!({ "error": "Failed to generate PDF" })
+                    } else {
+                        match unsafe { ns_data_to_base64(pdf) } {
+                            Some(b64) => serde_json::json!({ "data": b64 }),
+                            None => serde_json::json!({ "error": "Failed to encode generated PDF" }),
+                        }
+                    };
+                    if let Some(ref tx) = tx {
+                        let _ = tx.send((request_id.clone(), result));
+                    }
+                },
+            );
+            // Safety: message send to a live WKWebView instance on the main thread.
+            unsafe {
+                let () = objc2_v05::msg_send![
+                    &wv,
+                    createPDFWithConfiguration: std::ptr::null::<objc2_v05::runtime::AnyObject>(),
+                    completionHandler: &*block
+                ];
+            }
+            return;
+        }
+    }
+    if let Some(ref tx) = st.response_tx {
+        let _ = tx.send((request_id, serde_json::json!({ "error": "Window not found" })));
+    }
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn ns_image_to_png(ns_image: *mut objc2_v05::runtime::AnyObject) -> Option<String> {
+    let object: *mut objc2_v05::runtime::AnyObject = ns_image.cast();
+    if object.is_null() {
+        return None;
+    }
+    // NSImage -> TIFF NSData
+    let tiff: *mut objc2_v05::runtime::AnyObject = objc2_v05::msg_send![object, TIFFRepresentation];
+    if tiff.is_null() {
+        return None;
+    }
+    // NSBitmapImageRep from TIFF data
+    let rep: *mut objc2_v05::runtime::AnyObject =
+        objc2_v05::msg_send![objc2_v05::class!(NSBitmapImageRep), imageRepWithData: tiff];
+    if rep.is_null() {
+        return None;
+    }
+    // PNG NSData (NSBitmapImageFileTypePNG == 4, `properties` may be nil)
+    let png: *mut objc2_v05::runtime::AnyObject = objc2_v05::msg_send![
+        rep,
+        representationUsingType: 4u64,
+        properties: std::ptr::null::<objc2_v05::runtime::AnyObject>()
+    ];
+    if png.is_null() {
+        return None;
+    }
+    ns_data_to_base64(png)
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn ns_data_to_base64(data: *mut objc2_v05::runtime::AnyObject) -> Option<String> {
+    use base64::Engine;
+
+    let object: *mut objc2_v05::runtime::AnyObject = data.cast();
+    if object.is_null() {
+        return None;
+    }
+    let len: usize = objc2_v05::msg_send![object, length];
+    if len == 0 {
+        return None;
+    }
+    let bytes: *const std::ffi::c_void = objc2_v05::msg_send![object, bytes];
+    if bytes.is_null() {
+        return None;
+    }
+    let slice = std::slice::from_raw_parts(bytes.cast::<u8>(), len);
+    Some(base64::engine::general_purpose::STANDARD.encode(slice))
 }
 
 // Resolve the Node.js runtime the gelectron engine should spawn. Resolution

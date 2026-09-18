@@ -17,7 +17,7 @@
 | 2 | autoUpdater | YES | YES | YES | **stub** | API surface for electron-updater compat, no actual updates |
 | 3 | BaseWindow | NO | NO | NO | **missing** | Parent class for BrowserWindow, not implemented |
 | 4 | BrowserView | NO | NO | NO | **missing** | Deprecated in favor of WebContentsView |
-| 5 | BrowserWindow | YES | YES | YES | **partial** | create/show/hide/focus/min/max/close/destroy/setTitle/setSize/loadURL/loadFile. Missing: DevTools, navigation, capturePage, print, printToPDF |
+| 5 | BrowserWindow | YES | YES | YES | **partial** | create/show/hide/focus/min/max/unmax/restore/close/destroy/setTitle/setSize/loadURL/loadFile/capturePage/print/printToPDF/openDevTools (native WKWebView, macOS capture/PDF). Missing: zoom, vibrancy, frameless edges |
 | 6 | clipboard | YES | inline | YES | **full** | readText/writeText/readHTML/writeHTML/readRTF/writeRTF/readImage/writeImage/readBookmark/writeBookmark/readFindText/writeFindText/clear/availableFormats/has. Sync via Unix FIFO channel (macOS/Linux) or async bridge (Windows). RTF/bookmark/find-text/formats via NSPasteboard on macOS |
 | 7 | contentTracing | NO | NO | NO | **missing** | Tracing/recording profiling data |
 | 8 | crashReporter | NO | NO | NO | **missing** | Crash upload to server |
@@ -30,7 +30,7 @@
 | 15 | Menu | YES | YES | YES | **partial** | buildFromTemplate/append/insert/getMenuItemById, native setApplicationMenu via muda, _serialize. Missing: click events from native menu, role-based predefined items |
 | 16 | MenuItem | YES | YES | YES | **partial** | All properties present (id/label/type/role/accelerator/enabled/visible/checked/submenu/click). Missing: role auto-behavior |
 | 17 | MessageChannelMain | NO | NO | NO | **missing** | MessagePort-based IPC between main/renderer |
-| 18 | nativeImage | YES | YES | YES | **partial** | createFromPath/Buffer/DataURL, toDataURL, getSize. Missing: resize/crop pixel transform, proper toPNG/toJPEG |
+| 18 | nativeImage | YES | YES | YES | **partial** | createFromPath/Buffer/DataURL/createEmpty, toDataURL, getSize. Missing: resize/crop pixel transform, proper toPNG/toJPEG |
 | 19 | nativeTheme | YES | inline | YES | **partial** | NativeTheme class: shouldUseDarkColors (getter + method), themeSource (getter/setter), shouldSystemUseDarkColors, queries Rust for system theme. systemPreferences.isDarkMode() linked |
 | 20 | net | NO | inline | YES | **partial** | fetch delegates to globalThis.fetch. Missing: net.request(), ClientRequest API |
 | 21 | netLog | NO | NO | NO | **missing** | Network log capture |
@@ -51,7 +51,7 @@
 | 36 | Tray | YES | YES | YES | **stub** | API surface present, no native system tray |
 | 37 | utilityProcess | NO | NO | NO | **missing** | Fork utility child processes |
 | 38 | View | NO | NO | NO | **missing** | Base View class for embedding |
-| 39 | webContents | YES | YES | YES | **partial** | loadURL/loadFile/send/executeJavaScript/reload, session stub. Missing: navigation history, DevTools CDP, zoom, print, capturePage |
+| 39 | webContents | YES | YES | YES | **partial** | loadURL/loadFile/reload/reloadIgnoringCache/send/executeJavaScript/getURL/getTitle/getHistory/stop/navigation (goBack/goForward/canGoBack/canGoForward)/DevTools (open/close/toggle/isOpened/inspect)/capturePage/print/printToPDF. Missing: zoom, CDP, drag&drop session, PDF viewer |
 | 40 | WebContentsView | NO | NO | NO | **missing** | View-based content embedding |
 | 41 | webFrameMain | NO | NO | NO | **missing** | Main-process webFrame for frame control |
 
@@ -71,7 +71,7 @@
 
 | # | Module | File | webview-bundle | index.js | Status | Notes |
 |---|--------|------|----------------|----------|--------|-------|
-| 49 | nativeImage | YES | YES | YES | **partial** | createFromPath/Buffer/DataURL, toDataURL, getSize. Missing: resize/crop transform |
+| 49 | nativeImage | YES | YES | YES | **partial** | createFromPath/Buffer/DataURL/createEmpty, toDataURL, getSize. Missing: resize/crop transform |
 | 50 | shell | YES | YES | YES | **partial** | openExternal/openPath/showItemInFolder/moveItemToTrash/beep via bridge (open crate + platform commands) |
 
 ## Deprecated / Internal
@@ -81,7 +81,7 @@
 | 51 | BrowserView | **missing** | Deprecated, replaced by WebContentsView |
 | 52 | remote | **missing** | Removed in Electron 14+ |
 | 53 | webviewTag | **missing** | Deprecated, replaced by BrowserView/WebContentsView |
-| 54 | process (polyfill) | **partial** | WebView mode polyfill: pid/argv/env/platform/versions/cwd/nextTick. Missing: memoryUsage/cpuUsage/uptime/kill |
+| 54 | process (polyfill) | **partial** | WebView mode polyfill: pid/argv/env/platform/versions/cwd/nextTick/memoryUsage/cpuUsage/uptime/kill/exit/hrtime/EventEmitter. Missing: real child process mgmt, signal handling |
 | 55 | contextIsolation | **stub** | webPreferences.contextIsolation stored but no actual V8 isolate separation |
 
 ## Additional APIs from Electron Docs
@@ -121,6 +121,13 @@ These commands are implemented on the Rust side and can be triggered from the We
 | set-size | YES | Updates window inner size |
 | show / hide / focus | YES | Window visibility |
 | minimize / maximize | YES | Window state |
+| unmaximize / restore | YES | Window state |
+| go-back / go-forward | YES | WebView history navigation |
+| open-devtools / close-devtools / toggle-devtools | YES | WebView DevTools (wry webview devtools, enabled via devtools feature) |
+| inspect-element | YES | DevTools element inspection (macOS WKWebView) |
+| print-page | YES | Native print dialog (wry webview.print) |
+| capture-page | YES | PNG snapshot of webview (macOS WKWebView takeSnapshot; unsupported elsewhere) |
+| print-to-pdf | YES | PDF render of webview (macOS WKWebView createPDF; unsupported elsewhere) |
 | close | YES | Closes window |
 | eval-js | YES | Execute JavaScript in webview |
 | ipc-message | YES | Forward IPC to renderer |

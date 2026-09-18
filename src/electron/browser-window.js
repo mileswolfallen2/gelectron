@@ -21,6 +21,9 @@ class WebContents extends EventEmitter {
     this._zoomLevel = 0;
     this._userAgent = '';
     this._audioMuted = false;
+    this._isDevToolsOpened = false;
+    this._history = [];
+    this._historyIndex = -1;
   }
 
   get URL() { return this._url; }
@@ -53,8 +56,10 @@ class WebContents extends EventEmitter {
 
   loadURL(targetUrl) {
     this._url = targetUrl;
+    this._pushHistory(targetUrl);
     this._isLoading = true;
     this.emit('did-start-loading');
+    this.emit('did-start-navigation', targetUrl);
     if (isNative) {
       bridge.loadUrl(this.id, targetUrl);
     }
@@ -62,6 +67,7 @@ class WebContents extends EventEmitter {
       this._isLoading = false;
       this.emit('did-stop-loading');
       this.emit('did-finish-load');
+      this.emit('did-navigate', targetUrl);
       this.emit('dom-ready');
     }, isNative ? 500 : 100);
     return Promise.resolve();
@@ -70,8 +76,10 @@ class WebContents extends EventEmitter {
   loadFile(filePath) {
     const url = `file://${path.resolve(filePath)}`;
     this._url = url;
+    this._pushHistory(url);
     this._isLoading = true;
     this.emit('did-start-loading');
+    this.emit('did-start-navigation', url);
     if (isNative) {
       bridge.loadFile(this.id, filePath);
     }
@@ -79,6 +87,7 @@ class WebContents extends EventEmitter {
       this._isLoading = false;
       this.emit('did-stop-loading');
       this.emit('did-finish-load');
+      this.emit('did-navigate', url);
       this.emit('dom-ready');
     }, isNative ? 500 : 100);
     return Promise.resolve();
@@ -87,6 +96,7 @@ class WebContents extends EventEmitter {
   reload() {
     this._isLoading = true;
     this.emit('did-start-loading');
+    this.emit('did-start-navigation', this._url);
     if (isNative && this._url) {
       bridge.loadUrl(this.id, this._url);
     }
@@ -94,14 +104,70 @@ class WebContents extends EventEmitter {
       this._isLoading = false;
       this.emit('did-stop-loading');
       this.emit('did-finish-load');
+      this.emit('did-navigate', this._url);
     }, 50);
     return Promise.resolve();
   }
 
-  canGoBack() { return false; }
-  canGoForward() { return false; }
-  goBack() {}
-  goForward() {}
+  reloadIgnoringCache() {
+    return this.reload();
+  }
+
+  goBack() {
+    if (!this.canGoBack()) return Promise.resolve();
+    this._historyIndex -= 1;
+    const url = this._history[this._historyIndex];
+    this._url = url;
+    this._isLoading = true;
+    this.emit('did-start-loading');
+    this.emit('did-start-navigation', url);
+    if (isNative) bridge.goBack(this.id);
+    setTimeout(() => {
+      this._isLoading = false;
+      this.emit('did-stop-loading');
+      this.emit('did-finish-load');
+      this.emit('did-navigate', url);
+    }, 50);
+    return Promise.resolve();
+  }
+
+  goForward() {
+    if (!this.canGoForward()) return Promise.resolve();
+    this._historyIndex += 1;
+    const url = this._history[this._historyIndex];
+    this._url = url;
+    this._isLoading = true;
+    this.emit('did-start-loading');
+    this.emit('did-start-navigation', url);
+    if (isNative) bridge.goForward(this.id);
+    setTimeout(() => {
+      this._isLoading = false;
+      this.emit('did-stop-loading');
+      this.emit('did-finish-load');
+      this.emit('did-navigate', url);
+    }, 50);
+    return Promise.resolve();
+  }
+
+  canGoBack() { return this._historyIndex > 0; }
+  canGoForward() { return this._historyIndex >= 0 && this._historyIndex < this._history.length - 1; }
+
+  _pushHistory(url) {
+    if (!url) return;
+    if (this._history[this._historyIndex] === url) return;
+    this._history = this._history.slice(0, this._historyIndex + 1);
+    this._history.push(url);
+    this._historyIndex = this._history.length - 1;
+  }
+
+  getURL() { return this._url; }
+  getTitle() { return this._title; }
+  getHistory() { return this._history.slice(); }
+
+  stop() {
+    this._isLoading = false;
+    this.emit('did-stop-loading');
+  }
 
   executeJavaScript(code, userGesture = true) {
     if (isNative) {
@@ -132,11 +198,27 @@ class WebContents extends EventEmitter {
   setAudioMuted(muted) { this._audioMuted = muted; }
   isAudioMuted() { return this._audioMuted; }
 
-  openDevTools() { console.log('[gelectron] openDevTools'); }
-  closeDevTools() {}
-  isDevToolsOpened() { return false; }
-  toggleDevTools() {}
-  inspectElement() {}
+  openDevTools(options) {
+    if (this._isDevToolsOpened) return;
+    this._isDevToolsOpened = true;
+    this.emit('devtools-opened');
+    if (isNative) bridge.openDevTools(this.id);
+  }
+  closeDevTools() {
+    if (!this._isDevToolsOpened) return;
+    this._isDevToolsOpened = false;
+    this.emit('devtools-closed');
+    if (isNative) bridge.closeDevTools(this.id);
+  }
+  toggleDevTools() {
+    if (this._isDevToolsOpened) this.closeDevTools();
+    else this.openDevTools();
+  }
+  isDevToolsOpened() { return this._isDevToolsOpened; }
+  inspectElement(x, y) {
+    if (isNative) bridge.inspectElement(this.id, x || 0, y || 0);
+  }
+  inspectServiceWorker() {}
 
   setIgnoreMenuShortcuts() {}
   setWindowOpenHandler() { return { action: 'deny' }; }
@@ -144,7 +226,51 @@ class WebContents extends EventEmitter {
   setCertificateVerifyProc() {}
   setBackgroundColor() {}
   isCrashed() { return false; }
-  capturePage() { return Promise.resolve(null); }
+  capturePage(rect) {
+    if (isNative) {
+      return bridge.capturePage(this.id).then((result) => {
+        if (result && result.data && typeof result.data === 'string' && result.data.length > 0) {
+          return NativeImage.createFromDataURL(`data:image/png;base64,${result.data}`);
+        }
+        return NativeImage.createEmpty();
+      }).catch(() => NativeImage.createEmpty());
+    }
+    // Without a native runtime there is nothing to snapshot; return an empty
+    // NativeImage (matching Electron's behaviour for unavailable images) so
+    // callers that guard on image.isEmpty() do not crash.
+    return Promise.resolve(NativeImage.createEmpty());
+  }
+  print(options, callback) {
+    if (typeof options === 'function') { callback = options; options = {}; }
+    if (isNative) {
+      bridge.printPage(this.id);
+    } else {
+      console.log('[gelectron] print called');
+    }
+    if (typeof callback === 'function') {
+      // Node emulates `callback` after the print dialog closes; a false result
+      // means no failure was reported.
+      process.nextTick(callback, false);
+    }
+    return undefined;
+  }
+  printToPDF(options) {
+    const opts = Object.assign({}, options || {});
+    if (isNative) {
+      return bridge.printToPdf(this.id, opts).then((result) => {
+        if (result && result.error) {
+          const err = new Error(result.error);
+          err.code = 'ERR_NOT_SUPPORTED';
+          throw err;
+        }
+        if (result && typeof result.data === 'string') {
+          return Buffer.from(result.data, 'base64');
+        }
+        return Buffer.alloc(0);
+      });
+    }
+    return Promise.resolve(Buffer.alloc(0));
+  }
   getResourceUsage() { return { images: 0, scripts: 0, css: 0, xhr: 0, webgl: 0 }; }
   type() { return 'backgroundPage'; }
   focused() { return false; }
@@ -318,8 +444,8 @@ class BrowserWindow extends EventEmitter {
 
   minimize() { if (!this._isDestroyed) { this._isMinimized = true; if (isNative) bridge.minimizeWindow(this.id); this.emit('minimize'); } }
   maximize() { if (!this._isDestroyed) { this._isMaximized = true; if (isNative) bridge.maximizeWindow(this.id); this.emit('maximize'); } }
-  unmaximize() { if (!this._isDestroyed) { this._isMaximized = false; this.emit('unmaximize'); } }
-  restore() { if (!this._isDestroyed) { this._isMinimized = false; this._isMaximized = false; this.emit('restore'); } }
+  unmaximize() { if (!this._isDestroyed) { this._isMaximized = false; if (isNative) bridge.unmaximizeWindow(this.id); this.emit('unmaximize'); } }
+  restore() { if (!this._isDestroyed) { this._isMinimized = false; this._isMaximized = false; if (isNative) bridge.restoreWindow(this.id); this.emit('restore'); } }
 
   setFullScreen(flag) { this._isFullScreen = flag; this.emit('enter-full-screen'); }
   isFullScreen() { return this._isFullScreen; }
@@ -391,8 +517,19 @@ class BrowserWindow extends EventEmitter {
   getBackgroundColor() { return this._options.backgroundColor; }
 
   capturePage() { return this.webContents.capturePage(); }
-  print() { console.log('[gelectron] print called'); }
-  printToPDF() { return Promise.resolve(Buffer.alloc(0)); }
+  print(options, callback) { return this.webContents.print(options, callback); }
+  printToPDF(options) { return this.webContents.printToPDF(options); }
+  openDevTools(options) { this.webContents.openDevTools(options); }
+  closeDevTools() { this.webContents.closeDevTools(); }
+  toggleDevTools() { this.webContents.toggleDevTools(); }
+  isDevToolsOpened() { return this.webContents.isDevToolsOpened(); }
+  reload() { return this.webContents.reload(); }
+  reloadIgnoringCache() { return this.webContents.reloadIgnoringCache(); }
+  goBack() { return this.webContents.goBack(); }
+  goForward() { return this.webContents.goForward(); }
+  canGoBack() { return this.webContents.canGoBack(); }
+  canGoForward() { return this.webContents.canGoForward(); }
+  stop() { this.webContents.stop(); }
   setParentWindow() {}
   getParentWindow() { return null; }
   getChildWindows() { return []; }

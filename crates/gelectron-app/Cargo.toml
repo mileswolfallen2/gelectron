@@ -15,7 +15,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
-wry = "0.47"
+wry = { version = "0.47", features = ["devtools"] }
 tao = "0.30"
 muda = "0.15"
 arboard = "3"
@@ -30,3 +30,8 @@ libc = "0.2"
 objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
+# Version-aligned interop types for wry's internal macOS WKWebView
+# (wry 0.47 is built against the objc2 0.5 family, so calls into the
+# webview handle must use the same versions to keep pointer types compatible).
+block2-v05 = { package = "block2", version = "0.5" }
+objc2-v05 = { package = "objc2", version = "0.5" }

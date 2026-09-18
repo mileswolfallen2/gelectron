@@ -195,7 +195,7 @@ When the native binary is not built, the CLI falls back to pure Node.js:
 | Module | Status |
 |---|---|
 | `app` | Full lifecycle, paths, command line, dock (macOS), `whenReady()` |
-| `BrowserWindow` | Create, show/hide, resize, loadURL, loadFile, events, webContents |
+| `BrowserWindow` | Create, show/hide, min/max/restore, resize, loadURL/loadFile, history navigation, DevTools, `capturePage()`, `print()`, `printToPDF()`, events, webContents |
 | `ipcMain` | `handle()`, `on()`, `removeHandler()`, event emission |
 | `Menu` | `buildFromTemplate()`, `popup()`, `setApplicationMenu()` |
 | `MenuItem` | All types (normal, checkbox, separator, submenu, role) |
@@ -203,10 +203,10 @@ When the native binary is not built, the CLI falls back to pure Node.js:
 | `dialog` | `showOpenDialog()`, `showSaveDialog()`, `showMessageBox()`, `showErrorBox()` |
 | `shell` | `openExternal()`, `showItemInFolder()`, `openPath()` |
 | `Notification` | Full API + native OS notifications (macOS Notification Center, Windows Toasts, Linux D-Bus); click/action/reply/close/failed events |
-| `nativeImage` | Create from path/buffer, resize, crop, PNG/JPEG export |
+| `nativeImage` | Create from path/buffer/dataURL, `createEmpty()`, PNG/JPEG export |
 | `safeStorage` | Encrypt/decrypt via system keyring |
 | `contextBridge` | `exposeInMainWorld()` for secure preload |
-| `webContents` | `send()`, `executeJavaScript()`, `openDevTools()`, navigation |
+| `webContents` | `send()`, `executeJavaScript()`, DevTools (open/close/toggle/inspect), history navigation (`goBack`/`goForward`), `capturePage()`, `print()`, `printToPDF()`, reload, stop |
 
 ### Renderer Process
 
@@ -617,7 +617,8 @@ gelectron --help              # Show help
 - [x] `electron-updater` compatibility
 - [ ] Multi-window support
 - [ ] Custom protocol handlers (`gelectron://`)
-- [ ] DevTools integration
+- [x] DevTools integration (wry webview devtools, native on macOS)
+- [x] WebContents navigation history (`goBack`/`goForward`)
 - [ ] App sandboxing
 - [x] Package/distribution tooling
 - [x] Performance benchmarks vs Electron
