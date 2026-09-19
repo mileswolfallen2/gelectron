@@ -17,7 +17,7 @@
 | 2 | autoUpdater | YES | YES | YES | **stub** | API surface for electron-updater compat, no actual updates |
 | 3 | BaseWindow | NO | NO | NO | **missing** | Parent class for BrowserWindow, not implemented |
 | 4 | BrowserView | NO | NO | NO | **missing** | Deprecated in favor of WebContentsView |
-| 5 | BrowserWindow | YES | YES | YES | **partial** | create/show/hide/focus/min/max/unmax/restore/close/destroy/setTitle/setSize/loadURL/loadFile/capturePage/print/printToPDF/openDevTools (native WKWebView, macOS capture/PDF). Missing: zoom, vibrancy, frameless edges |
+| 5 | BrowserWindow | YES | YES | YES | **partial** | create/show/hide/focus/min/max/unmax/restore/close/destroy/setTitle/setSize/loadURL/loadFile/capturePage/print/printToPDF/openDevTools (native WKWebView, macOS capture/PDF). Title bar: `titleBarStyle`, `titleBarOverlay`, `setTitleBarOverlay()`, `setBackgroundColor()`/`getBackgroundColor()` (macOS colors via NSWindow). Gelectron-only: `setTopBarColor()`. Missing: zoom, vibrancy, frameless edges |
 | 6 | clipboard | YES | inline | YES | **full** | readText/writeText/readHTML/writeHTML/readRTF/writeRTF/readImage/writeImage/readBookmark/writeBookmark/readFindText/writeFindText/clear/availableFormats/has. Sync via Unix FIFO channel (macOS/Linux) or async bridge (Windows). RTF/bookmark/find-text/formats via NSPasteboard on macOS |
 | 7 | contentTracing | NO | NO | NO | **missing** | Tracing/recording profiling data |
 | 8 | crashReporter | NO | NO | NO | **missing** | Crash upload to server |
@@ -88,7 +88,7 @@
 
 | # | API | Status | Notes |
 |---|-----|--------|-------|
-| 56 | navigation-history | **missing** | Navigation history API |
+| 56 | navigation-history | **partial** | WebContents goBack/goForward/canGoBack/canGoForward/getHistory. Missing: `webContents.navigationHistory` object, getEntryAtIndex/activeIndex |
 | 57 | parent-port | **missing** | UtilityProcess communication port |
 | 58 | web-request | **missing** | Intercept/modify HTTP requests |
 | 59 | web-socket | **missing** | WebSocket server |
@@ -102,9 +102,9 @@
 | Status | Count | Modules |
 |--------|-------|---------|
 | **full** | 4 | app, ipcMain, clipboard, Notification |
-| **partial** | 13 | BrowserWindow, Menu, MenuItem, dialog, shell, nativeImage, contextBridge, webContents, ipcRenderer, net, process, screen, nativeTheme |
+| **partial** | 14 | BrowserWindow, Menu, MenuItem, dialog, shell, nativeImage, contextBridge, webContents, ipcRenderer, net, process, screen, nativeTheme, navigation-history |
 | **stub** | 7 | Tray, safeStorage, autoUpdater, session, systemPreferences, powerMonitor, globalShortcut |
-| **missing** | 36 | BaseWindow, BrowserView, contentTracing, crashReporter, desktopCapturer, ImageView, inAppPurchase, MessageChannelMain, netLog, powerSaveBlocker, protocol, pushNotifications, ServiceWorkerMain, sharedTexture, ShareMenu, TouchBar (+10 sub-classes), utilityProcess, View, WebContentsView, webFrameMain, webFrame, webUtils, crashReporter (renderer), sharedTexture (renderer), remote, webviewTag, navigation-history, parent-port, web-request, web-socket, window-open, local-ai-handler |
+| **missing** | 35 | BaseWindow, BrowserView, contentTracing, crashReporter, desktopCapturer, ImageView, inAppPurchase, MessageChannelMain, netLog, powerSaveBlocker, protocol, pushNotifications, ServiceWorkerMain, sharedTexture, ShareMenu, TouchBar (+10 sub-classes), utilityProcess, View, WebContentsView, webFrameMain, webFrame, webUtils, crashReporter (renderer), sharedTexture (renderer), remote, webviewTag, parent-port, web-request, web-socket, window-open, local-ai-handler |
 | **Total** | **60** | BrowserView counted once (listed in both Main and Deprecated tables) |
 
 ## Rust Bridge (main.rs ToRust commands)
@@ -128,6 +128,8 @@ These commands are implemented on the Rust side and can be triggered from the We
 | print-page | YES | Native print dialog (wry webview.print) |
 | capture-page | YES | PNG snapshot of webview (macOS WKWebView takeSnapshot; unsupported elsewhere) |
 | print-to-pdf | YES | PDF render of webview (macOS WKWebView createPDF; unsupported elsewhere) |
+| set-titlebar-overlay | YES | macOS title bar color / transparency (`{ color, transparent, titleBarStyle }` via NSWindow backgroundColor + titlebarAppearsTransparent) |
+| set-background-color | YES | macOS window background color via NSWindow |
 | close | YES | Closes window |
 | eval-js | YES | Execute JavaScript in webview |
 | ipc-message | YES | Forward IPC to renderer |

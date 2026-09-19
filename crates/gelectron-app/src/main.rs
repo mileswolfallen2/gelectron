@@ -79,6 +79,10 @@ enum ToRust {
         #[serde(default)]
         options: Option<serde_json::Value>,
     },
+    #[serde(rename = "set-titlebar-overlay")]
+    SetTitlebarOverlay { id: u32, overlay: serde_json::Value },
+    #[serde(rename = "set-background-color")]
+    SetBackgroundColor { id: u32, color: String },
     #[serde(rename = "close")]
     Close { id: u32 },
     #[serde(rename = "ipc-message")]
@@ -227,12 +231,18 @@ struct WindowOpts {
     show: Option<bool>,
     #[serde(default)]
     resizable: Option<bool>,
-    #[serde(default)]
+    #[serde(default, alias = "alwaysOnTop")]
     always_on_top: Option<bool>,
     #[serde(default)]
     fullscreen: Option<bool>,
     #[serde(default)]
     icon: Option<String>,
+    #[serde(default, alias = "titlebarStyle")]
+    titlebar_style: Option<String>,
+    #[serde(default, alias = "titlebarOverlay")]
+    titlebar_overlay: Option<serde_json::Value>,
+    #[serde(default, alias = "backgroundColor")]
+    background_color: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -1548,6 +1558,15 @@ fn handle_to_rust(
                         }
                     };
                     let wid = window.id();
+                    // Apply macOS title bar / background chrome so the top bar
+                    // color, transparency and initial background are correct at
+                    // first paint (runs before the window is inserted/displayed).
+                    apply_window_chrome(
+                        &window,
+                        options.titlebar_style.as_deref(),
+                        options.titlebar_overlay.as_ref(),
+                        options.background_color.as_deref(),
+                    );
                     if let Some(icon) = options
                         .icon
                         .as_deref()
@@ -2097,6 +2116,19 @@ fn handle_to_rust(
         } => {
             print_to_pdf_for_window(st, id, request_id, options);
         }
+        ToRust::SetTitlebarOverlay { id, overlay } => {
+            if let Some(pair) = st.windows.get(&id) {
+                if let Some(style) = overlay.get("titleBarStyle").and_then(|v| v.as_str()) {
+                    apply_titlebar_style(&pair.window, Some(style));
+                }
+                apply_titlebar_overlay(&pair.window, &overlay);
+            }
+        }
+        ToRust::SetBackgroundColor { id, color } => {
+            if let Some(pair) = st.windows.get(&id) {
+                apply_background_color(&pair.window, &color);
+            }
+        }
     }
 }
 
@@ -2274,6 +2306,199 @@ unsafe fn ns_data_to_base64(data: *mut objc2_v05::runtime::AnyObject) -> Option<
     }
     let slice = std::slice::from_raw_parts(bytes.cast::<u8>(), len);
     Some(base64::engine::general_purpose::STANDARD.encode(slice))
+}
+
+// Window title bar / background chrome (macOS). These let apps color and
+// (optionally) clear the top bar. Colors are applied to the NSWindow via
+// public API: `titlebarAppearsTransparent` lets the window background show
+// through the title bar, and `backgroundColor` paints it.
+fn apply_window_chrome(
+    window: &tao::window::Window,
+    titlebar_style: Option<&str>,
+    titlebar_overlay: Option<&serde_json::Value>,
+    background_color: Option<&str>,
+) {
+    apply_titlebar_style(window, titlebar_style);
+    if let Some(overlay) = titlebar_overlay {
+        apply_titlebar_overlay(window, overlay);
+    }
+    if let Some(color) = background_color {
+        if !color.trim().is_empty() {
+            apply_background_color(window, color);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn apply_titlebar_style(window: &tao::window::Window, style: Option<&str>) {
+    use tao::platform::macos::WindowExtMacOS;
+    if let Some(style) = style {
+        if matches!(
+            style,
+            "hidden" | "hiddenInset" | "customButtonsOnHover"
+        ) {
+            window.set_titlebar_transparent(true);
+            log::info!("Title bar style '{}' applied (transparent)", style);
+        }
+    }
+}
+#[cfg(not(target_os = "macos"))]
+fn apply_titlebar_style(_window: &tao::window::Window, _style: Option<&str>) {}
+
+#[cfg(target_os = "macos")]
+fn apply_titlebar_overlay(window: &tao::window::Window, overlay: &serde_json::Value) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSWindow;
+    use tao::platform::macos::WindowExtMacOS;
+
+    let Some(_mtm) = MainThreadMarker::new() else {
+        log::warn!("Title bar overlay skipped: not on main thread");
+        return;
+    };
+
+    // Height/symbolColor only apply to custom-drawn title bars (Windows);
+    // on macOS we accept them for API parity but only color paints anything.
+    if let Some(height) = overlay.get("height") {
+        log::debug!("Title bar overlay height ignored on macOS: {}", height);
+    }
+    if let Some(symbol) = overlay.get("symbolColor") {
+        log::debug!("Title bar overlay symbolColor ignored on macOS: {}", symbol);
+    }
+
+    let transparent = overlay
+        .get("transparent")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    match overlay.get("color").and_then(|c| c.as_str()) {
+        Some(color_str) if parse_css_color(color_str).is_some() => {
+            let (r, g, b, a) = parse_css_color(color_str).unwrap();
+            let ns_color = objc2_app_kit::NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, a);
+            let ptr = window.ns_window() as *mut NSWindow;
+            if ptr.is_null() {
+                return;
+            }
+            unsafe {
+                let ns_window = &*ptr;
+                ns_window.setBackgroundColor(Some(&ns_color));
+                ns_window.setTitlebarAppearsTransparent(true);
+            }
+            log::info!("Title bar overlay color applied: {}", color_str);
+        }
+        Some(other) => {
+            log::warn!("Title bar overlay color '{}' is not a supported color", other);
+        }
+        None if transparent => {
+            // Fully clear top bar: just lift the title bar, keep the existing
+            // window background underneath.
+            let ptr = window.ns_window() as *mut NSWindow;
+            if !ptr.is_null() {
+                unsafe {
+                    (*ptr).setTitlebarAppearsTransparent(true);
+                }
+            }
+            log::info!("Title bar made transparent");
+        }
+        None => {}
+    }
+}
+#[cfg(not(target_os = "macos"))]
+fn apply_titlebar_overlay(_window: &tao::window::Window, _overlay: &serde_json::Value) {
+    log::warn!("Title bar overlay is only supported on macOS");
+}
+
+#[cfg(target_os = "macos")]
+fn apply_background_color(window: &tao::window::Window, color: &str) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSWindow;
+    use tao::platform::macos::WindowExtMacOS;
+
+    let Some(_mtm) = MainThreadMarker::new() else {
+        log::warn!("Background color skipped: not on main thread");
+        return;
+    };
+    let Some((r, g, b, a)) = parse_css_color(color) else {
+        log::warn!("Background color '{}' is not a supported color", color);
+        return;
+    };
+    let ns_color = objc2_app_kit::NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, a);
+    let ptr = window.ns_window() as *mut NSWindow;
+    if ptr.is_null() {
+        return;
+    }
+    unsafe {
+        (*ptr).setBackgroundColor(Some(&ns_color));
+    }
+    log::info!("Window background color applied: {}", color);
+}
+#[cfg(not(target_os = "macos"))]
+fn apply_background_color(_window: &tao::window::Window, _color: &str) {}
+
+// Parse CSS-ish colors: #RGB, #RGBA, #RRGGBB, #RRGGBBAA, `rgb(r,g,b)`,
+// `rgba(r,g,b,a)` (values as 0-255 or percentages), and `transparent`.
+// Returns normalized (r, g, b, a) each in the range 0.0..=1.0.
+#[cfg(target_os = "macos")]
+fn parse_css_color(input: &str) -> Option<(f64, f64, f64, f64)> {
+    let s = input.trim();
+    if s.eq_ignore_ascii_case("transparent") {
+        return Some((0.0, 0.0, 0.0, 0.0));
+    }
+    if let Some(hex) = s.strip_prefix('#') {
+        let digits: String = match hex.len() {
+            3 => hex.chars().flat_map(|c| [c, c]).collect(),
+            4 => hex.chars().flat_map(|c| [c, c]).collect(),
+            _ => hex.to_string(),
+        };
+        fn comp(v: &str) -> Option<f64> {
+            u8::from_str_radix(v, 16)
+                .ok()
+                .map(|x| x as f64 / 255.0)
+        }
+        let (r, g, b, a) = match digits.len() {
+            6 => (
+                comp(&digits[0..2])?,
+                comp(&digits[2..4])?,
+                comp(&digits[4..6])?,
+                1.0,
+            ),
+            8 => (
+                comp(&digits[0..2])?,
+                comp(&digits[2..4])?,
+                comp(&digits[4..6])?,
+                comp(&digits[6..8])?,
+            ),
+            _ => return None,
+        };
+        return Some((r, g, b, a));
+    }
+    if s.starts_with("rgb") {
+        let open = s.find('(')?;
+        let close = s.rfind(')')?;
+        if close <= open {
+            return None;
+        }
+        let parts: Vec<&str> = s[open + 1..close].split(',').map(|p| p.trim()).collect();
+        if parts.len() < 3 {
+            return None;
+        }
+        let parse = |p: &str| -> Option<f64> {
+            if let Some(pct) = p.strip_suffix('%') {
+                pct.trim().parse::<f64>().ok().map(|v| v / 100.0)
+            } else {
+                p.parse::<f64>().ok().map(|v| v / 255.0)
+            }
+        };
+        let r = parse(parts[0])?;
+        let g = parse(parts[1])?;
+        let b = parse(parts[2])?;
+        let a = if parts.len() >= 4 {
+            parse(parts[3]).unwrap_or(1.0)
+        } else {
+            1.0
+        };
+        return Some((r, g, b, a));
+    }
+    None
 }
 
 // Resolve the Node.js runtime the gelectron engine should spawn. Resolution

@@ -192,6 +192,14 @@ class NativeBridge extends EventEmitter {
     return this.request('print-to-pdf', { id, options: options || {} });
   }
 
+  setTitleBarOverlay(id, overlay) {
+    this._send({ type: 'set-titlebar-overlay', id, overlay: overlay || {} });
+  }
+
+  setBackgroundColor(id, color) {
+    this._send({ type: 'set-background-color', id, color });
+  }
+
   closeWindow(id) {
     this._send({ type: 'close', id });
   }

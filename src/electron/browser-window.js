@@ -307,6 +307,7 @@ class BrowserWindow extends EventEmitter {
       decorations: options.decorations !== false,
       icon: options.icon || null,
       titleBarStyle: options.titleBarStyle || 'default',
+      titleBarOverlay: this._normalizeOverlay(options.titleBarOverlay || options.topBarColor || null),
       trafficLightPosition: options.trafficLightPosition || null,
       vibrancy: options.vibrancy || null,
       webPreferences: {
@@ -347,6 +348,9 @@ class BrowserWindow extends EventEmitter {
         alwaysOnTop: this._options.alwaysOnTop,
         fullscreen: this._options.fullscreen,
         icon: this._iconToBase64Png(this._options.icon),
+        titlebarStyle: this._options.titleBarStyle === 'default' ? null : this._options.titleBarStyle,
+        titlebarOverlay: this._options.titleBarOverlay,
+        backgroundColor: this._options.backgroundColor,
       });
     }
 
@@ -358,6 +362,20 @@ class BrowserWindow extends EventEmitter {
         }
       });
     }
+  }
+
+  // Normalize a title bar overlay spec into { color?, symbolColor?, height?, transparent? }.
+  // Accepts a hex/CSS color string, options object, or null.
+  _normalizeOverlay(value) {
+    if (!value) return null;
+    if (typeof value === 'string') return { color: value };
+    const out = {};
+    if (value.color != null) out.color = String(value.color);
+    if (value.symbolColor != null) out.symbolColor = String(value.symbolColor);
+    if (value.height != null) out.height = value.height;
+    if (value.transparent != null) out.transparent = !!value.transparent;
+    if (value.titleBarStyle != null) out.titleBarStyle = String(value.titleBarStyle);
+    return out;
   }
 
   _iconToBase64Png(icon) {
@@ -513,8 +531,47 @@ class BrowserWindow extends EventEmitter {
   setForeground() {}
   flashFrame() {}
   setIcon() {}
-  setBackgroundColor(c) { this._options.backgroundColor = c; }
+
+  // Electron API: sets the window background color. On macOS this repaints
+  // the window background (which shows through a transparent title bar).
+  setBackgroundColor(color) {
+    this._options.backgroundColor = color || '#ffffff';
+    if (isNative) bridge.setBackgroundColor(this.id, this._options.backgroundColor);
+  }
+  // Electron API: returns the last requested background color.
   getBackgroundColor() { return this._options.backgroundColor; }
+
+  // Electron API (titleBarOverlay): colors the macOS title bar. Accepts
+  // `{ color, symbolColor, height }` or a plain color string.
+  setTitleBarOverlay(overlay) {
+    const normalized = this._normalizeOverlay(overlay);
+    if (normalized) this._options.titleBarOverlay = normalized;
+    if (isNative) bridge.setTitleBarOverlay(this.id, this._options.titleBarOverlay || {});
+  }
+
+  // Gelectron custom API (no Electron equivalent): a clear, single-call way to
+  // style the macOS top bar. Accepts a color string or an options object:
+  //
+  //   win.setTopBarColor('#FF5A5F')
+  //   win.setTopBarColor({ color: '#FF5A5F', symbolColor: '#ffffff', transparent: true, titleBarStyle: 'hidden' })
+  //
+  //   color       CSS color (hex, rgb/rgba, or 'transparent'); paints the top bar
+  //   symbolColor accepted for parity (used for custom-drawn title bars on other platforms)
+  //   transparent true → make the title bar clear/see-through; without `color` it just clears it
+  //   height      accepted for parity (custom title bar height, other platforms)
+  //   titleBarStyle 'default' | 'hidden' | 'hiddenInset' | 'customButtonsOnHover'
+  setTopBarColor(value) {
+    const normalized = this._normalizeOverlay(value);
+    if (normalized) {
+      this._options.titleBarOverlay = normalized;
+      if (normalized.transparent === true && !normalized.color) {
+        // A purely-transparent top bar: clear it without painting a color.
+        this.setTitleBarOverlay({ ...normalized, color: 'transparent' });
+        return;
+      }
+      this.setTitleBarOverlay(normalized);
+    }
+  }
 
   capturePage() { return this.webContents.capturePage(); }
   print(options, callback) { return this.webContents.print(options, callback); }

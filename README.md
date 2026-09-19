@@ -195,7 +195,7 @@ When the native binary is not built, the CLI falls back to pure Node.js:
 | Module | Status |
 |---|---|
 | `app` | Full lifecycle, paths, command line, dock (macOS), `whenReady()` |
-| `BrowserWindow` | Create, show/hide, min/max/restore, resize, loadURL/loadFile, history navigation, DevTools, `capturePage()`, `print()`, `printToPDF()`, events, webContents |
+| `BrowserWindow` | Create, show/hide, min/max/restore, resize, loadURL/loadFile, history navigation, DevTools, `capturePage()`, `print()`, `printToPDF()`, macOS title bar theming, events, webContents |
 | `ipcMain` | `handle()`, `on()`, `removeHandler()`, event emission |
 | `Menu` | `buildFromTemplate()`, `popup()`, `setApplicationMenu()` |
 | `MenuItem` | All types (normal, checkbox, separator, submenu, role) |
@@ -227,6 +227,36 @@ When the native binary is not built, the CLI falls back to pure Node.js:
 | `session` | Cookies, protocol, permissions (stub) |
 | `net` | `fetch()` proxy |
 | `autoUpdater` | Full (sha512-verified, atomic apply) |
+
+## macOS Title Bar Theming
+
+Electron-compatible APIs (work in stock Electron):
+
+```js
+const win = new BrowserWindow({
+  titleBarStyle: 'hidden',
+  titleBarOverlay: { color: '#24a0ed', symbolColor: '#ffffff', height: 40 },
+  backgroundColor: '#0f0f23',
+});
+
+win.setTitleBarOverlay({ color: '#FF5A5F', transparent: true, titleBarStyle: 'hiddenInset' });
+win.setBackgroundColor('#123456');
+win.getBackgroundColor(); // '#123456'
+```
+
+Gelectron-only helper (no Electron equivalent — a single clear call for the top bar):
+
+```js
+win.setTopBarColor('#FF5A5F');                                   // just a color
+win.setTopBarColor({ color: '#19b1ff', transparent: false });    // options object
+win.setTopBarColor({ transparent: true });                       // clear / see-through
+win.setTopBarColor('transparent');                               // shorthand for clear
+```
+
+Colors accept `#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`, `rgb()`, `rgba()`, or `transparent`.
+On macOS the title bar is painted via `NSWindow` (`backgroundColor` +
+`titlebarAppearsTransparent`). On other platforms the APIs are accepted for
+compatibility but are no-ops.
 
 ## Demo App
 
