@@ -18,7 +18,7 @@ Electron bundles Chromium — ~300 MB per app with 500+ MB RSS. Gelectron uses t
 | Language | C++ / Node.js | Rust / Node.js |
 | API Compatibility | Native | Drop-in replacement |
 | Node.js Integration | Built-in | Spawned child process or WebView-only |
-| Auto Updater | Built-in | Full (electron-updater compatible)
+| Auto Updater | Built-in | Full (electron-updater compatible) |
 
 ## Quick Start
 
@@ -632,27 +632,60 @@ gelectron --help              # Show help
 
 ## Known Limitations
 
-- Auto-updater is a no-op stub (returns "no update available")
-- Some Electron APIs are stubs (marked in compatibility table)
-- Preload scripts are injected via WebView init scripts, not true Electron preload isolation
-- Native menu rendering is macOS-only (Windows/Linux fall back to JS-only menus)
+- Some Electron APIs are stubs or partial (marked in the compatibility table — see [ELECTRON_API_STATUS.md](ELECTRON_API_STATUS.md) for full tracking)
+- Preload scripts are injected via WebView init scripts, not true Electron preload isolation (`contextIsolation` is stored but there is no separate V8 isolate)
+- Tray is a JS-only stub (API surface present, no native system tray icon yet)
+- `capturePage()`/`printToPDF()` are native on macOS (WKWebView) and reported as unsupported elsewhere
+- Custom protocol handlers (`gelectron://`) are not yet implemented
+- App sandboxing (webPreferences.sandbox) is not yet enforced
 
 ## Roadmap
 
+**Shipped**
+
 - [x] JS Electron API compatibility layer
 - [x] Standalone native binary (tao + wry)
-- [x] Node.js fallback runtime
+- [x] Node.js fallback runtime (`cli/gelectron.js`)
 - [x] JSON-line IPC between Rust and Node.js
 - [x] WebView-only mode (`--no-node`)
-- [x] `electron-updater` compatibility
-- [ ] Multi-window support
-- [ ] Custom protocol handlers (`gelectron://`)
+- [x] `electron-updater` compatibility (sha512-verified, atomic apply)
+- [x] Native notifications (Notification Center / Toasts / D-Bus)
+- [x] Full clipboard API (text / HTML / RTF / image / bookmark / find-text)
+- [x] Multi-window support (create, destroy, focus tracking)
 - [x] DevTools integration (wry webview devtools, native on macOS)
 - [x] WebContents navigation history (`goBack`/`goForward`)
-- [ ] App sandboxing
-- [x] Package/distribution tooling
+- [x] `capturePage()` / `print()` / `printToPDF()` (native on macOS)
+- [x] Native menus via muda (macOS application menu)
+- [x] macOS title bar theming (`titleBarStyle`, `titleBarOverlay`, `setBackgroundColor`, `setTopBarColor`)
+- [x] Process polyfill for WebView-only mode (`process.js`)
+- [x] macOS dock icon + app window icon support
+- [x] Clipboard sync IPC via Unix FIFOs (macOS/Linux)
+- [x] Package/distribution tooling (npm, GitHub Releases, DMG/EXE/AppImage installers)
 - [x] Performance benchmarks vs Electron
+
+**In progress**
+
+- [ ] Native tray icon (Windows / Linux, cross-platform)
+- [ ] Custom protocol handlers (`gelectron://`)
+- [ ] Full `session` module (cookies, protocol registration, permissions)
+- [ ] Native menu item click events + role auto-behavior on all platforms
 - [ ] Cross-platform verification (Windows, Linux)
+
+**Planned**
+
+- [ ] App sandboxing
+- [ ] `window.open()` handling and popup windows
+- [ ] BrowserView / WebContentsView embedding
+- [ ] Desktop capturer (`desktopCapturer`) for screen/window sharing
+- [ ] Power monitor (`powerMonitor`, `powerSaveBlocker`) real backends
+- [ ] Global shortcuts (`globalShortcut`) real backends
+- [ ] `net.request()` / ClientRequest API
+- [ ] WebRequest interception (`webRequest`)
+- [ ] Zoom controls (`webContents.setZoomFactor`, `BrowserWindow.webContents.zoomLevel`)
+- [ ] Service workers and offline support
+- [ ] Single-instance lock (`app.requestSingleInstanceLock`)
+- [ ] Crash reporter (`crashReporter`)
+- [ ] Linux/Windows native menu verification and polish
 
 ## Contributing
 
