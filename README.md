@@ -660,12 +660,12 @@ gelectron --help              # Show help
 - [x] Process polyfill for WebView-only mode (`process.js`)
 - [x] macOS dock icon + app window icon support
 - [x] Clipboard sync IPC via Unix FIFOs (macOS/Linux)
-- [x] Package/distribution tooling (npm, GitHub Releases, DMG/EXE/AppImage installers)
 - [x] Performance benchmarks vs Electron
 
 **In progress**
 
 - [ ] Native tray icon (Windows / Linux, cross-platform)
+- [ ] Package/distribution tooling (npm, GitHub Releases, DMG/EXE/AppImage installers)
 - [ ] Custom protocol handlers (`gelectron://`)
 - [ ] Full `session` module (cookies, protocol registration, permissions)
 - [ ] Native menu item click events + role auto-behavior on all platforms
