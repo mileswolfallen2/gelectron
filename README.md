@@ -4,697 +4,147 @@
   <p>A drop-in replacement for Electron using native web views (WKWebView / WebView2 / WebKitGTK) instead of Chromium</p>
 </div>
 
-See the [benchmark results and comparisons](https://gelectron.milesallen.site/benchmarks) for the latest performance data.
+Gelectron is an Electron alternative focused on using platform-native web views through [`wry`](https://github.com/tauri-apps/wry) and `tao`, plus a Node-compatible API shim.
 
-## Why Gelectron?
+## Project status
 
-Electron bundles Chromium — ~300 MB per app with 500+ MB RSS. Gelectron uses the OS-native web view (WKWebView on macOS, WebView2 on Windows, WebKitGTK on Linux) via the **wry** and **tao** Rust crates, producing smaller binaries with dramatically lower memory usage.
+- Early-stage project under active development
+- Compatibility is partial and evolving
+- Some Electron APIs are implemented, others are stubs or no-ops
 
-| Feature | Electron | Gelectron |
-|---|---|---|
-| Rendering Engine | Chromium | Native WebView (WKWebView / WebView2 / WebKitGTK) |
-| Total RSS (process tree) | ~588 MB | ~131 MB |
-| Binary Size | ~300 MB | ~3 MB |
-| Language | C++ / Node.js | Rust / Node.js |
-| API Compatibility | Native | Drop-in replacement |
-| Node.js Integration | Built-in | Spawned child process or WebView-only |
-| Auto Updater | Built-in | Full (electron-updater compatible) |
+If you are evaluating migration from Electron, test your app against Gelectron directly before committing to it.
 
-## Quick Start
+## Install
 
-### Install from npm (recommended)
+The npm package exposes:
 
-The built native binary and the Electron compatibility layer are published to npm. This is the main and easiest way to get Gelectron — no Rust toolchain required:
+- `gelectron`
+- `gelectron-core`
+- `gelectron-packager`
 
 ```bash
 npm install -g gelectron-core
 ```
 
-This installs the `gelectron-core` package, which bundles the pre-built native binary and the JS compatibility layer, and automatically pulls in the platform-specific addon for your operating system and CPU architecture (see the [package on npm](https://www.npmjs.com/package/gelectron-core)).
+## Quick start
 
-Once installed, run any Electron app exactly like Electron — the `gelectron` command works out of the box (the package also exposes `gelectron-core` and `gelectron-packager`):
+Run an app directory (uses `package.json` -> `main`):
 
 ```bash
 gelectron /path/to/electron-app
-gelectron .              # app in the current directory (reads package.json "main")
-gelectron main.js        # a bare main-process script
+gelectron .
+```
+
+Run a main-process script directly:
+
+```bash
+gelectron main.js
+```
+
+Show CLI version/help:
+
+```bash
 gelectron --version
+gelectron --help
 ```
 
-### Download a native installer (double-click, no tools needed)
+If the native runtime binary is unavailable, the CLI falls back to the Node.js compatibility runtime (`src/electron/runtime.js`), which is API-only and does not provide a native desktop window.
 
-Every new release tag (pushed as `v*`) is pre-compiled in CI and published as
-platform-native, double-clickable installers on the [Releases page]:
+## Build from source
 
-| Platform | Installer | What it does |
-|---|---|---|
-| macOS | `Gelectron-<version>-arm64.dmg` / `-x64.dmg` | Contains `Install gelectron.pkg`, which installs the runtime + compat layer **plus a private Node.js** to `/usr/local/lib/gelectron` and symlinks `gelectron` into `/usr/local/bin` |
-| Windows | `Gelectron-<version>-x64.exe` / `-arm64.exe` | NSIS installer → `C:\Program Files\Gelectron` (runtime + compat + private Node.js), adds it to the system PATH, Start Menu + uninstaller |
-| Linux | `Gelectron-<version>-x86_64.AppImage` / `-aarch64.AppImage` | Fully self-contained (runtime + compat + private Node.js), just run it |
+### Prerequisites
 
-After installing, `gelectron /path/to/electron-app` works from anywhere, and no
-system Node.js install is required — every installer bundles its own runtime.
-
-Apps packaged with `gelectron-packager` are equally self-contained: double-click
-a packaged app and it runs with no gelectron and no Node.js installed.
-
-> macOS installers are ad-hoc signed (no Developer ID), so on another Mac the
-> first launch shows a Gatekeeper "unidentified developer" warning — right-click
-> → Open to run it.
-
-### Install from GitHub Releases (no npm)
-
-Every new release tag (pushed as `v*`) is pre-compiled in CI and published as
-a self-contained installer archive. Install the latest pre-built runtime with
-a single command — no Rust toolchain, no npm:
-
-```bash
-# macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/mileswolfallen2/gelectron/main/scripts/install-release.sh | bash
-
-# Windows (PowerShell)
-irm https://raw.githubusercontent.com/mileswolfallen2/gelectron/main/scripts/install-release.ps1 | iex
-```
-
-The installer downloads `gelectron-<version>-<platform>-<arch>.tar.gz` (or
-`.zip`) from the latest GitHub Release and puts the `gelectron` binary plus
-the JS compatibility layer into `~/.local/bin` (macOS/Linux) or
-`%LOCALAPPDATA%\gelectron\bin` (Windows). Customize with:
-
-```bash
-bash scripts/install-release.sh --version v0.1.1   # specific tag
-bash scripts/install-release.sh --prefix ~/bin     # custom location
-bash scripts/install-release.sh --uninstall        # remove
-```
-
-Archives can also be downloaded directly from the [Releases page] and
-unpacked manually — the binary just needs the `compat/` folder next to it.
-
-> The `gelectron-core` npm package is the recommended distribution channel. Building from source (below) is only needed if you're developing Gelectron itself or want the bleeding-edge version.
-
-[Releases page]: https://github.com/mileswolfallen2/gelectron/releases
-
-### Prerequisites (for building from source)
-
-- Rust 1.75+ (`rustup.rs`)
+- Rust (stable)
 - Node.js 18+
 - npm
 
-### Build & Run (from source)
+### Build and run
 
 ```bash
 git clone https://github.com/mileswolfallen2/gelectron.git
 cd gelectron
 npm install
 
-# Build the standalone native binary
+# Build native runtime binary
 cargo build --release -p gelectron
 
-# Run the demo app
-cargo run --release -p gelectron -- demo/
-
-# Or run any Electron app
-cargo run --release -p gelectron -- /path/to/electron-app
-```
-
-### CLI (Node.js fallback)
-
-The `gelectron` command automatically locates the native runtime — the release
-build, an npm/installer-installed binary (`PATH`, `/usr/local/bin`,
-`/usr/local/lib/gelectron`, `Program Files\Gelectron`, etc.) or a fresh
-`target/{release,debug}/gelectron`. If none is found it falls back to a
-pure-Node.js shim:
-
-```bash
-node cli/gelectron.js /path/to/electron-app
-```
-
-> In fallback mode no real window is created — only the JS API layer loads. Use the native binary for actual rendering.
-
-## How It Works
-
-Gelectron has two execution paths:
-
-### 1. Native Binary (`gelectron-app` crate)
-
-A standalone Rust binary using **tao** (windowing) and **wry** (WebView). It has two modes:
-
-**Node.js mode** (default):
-1. Reads the target app's `package.json` to find the main script
-2. Generates a Node.js setup script that patches `require('electron')` to point at Gelectron's JS compatibility layer
-3. Spawns Node.js as a child process with piped stdin/stdout
-4. Runs a tao event loop with wry WebView windows
-5. Communicates with Node.js via JSON-line IPC (`create-window`, `load-url`, `ipc-message`, …)
-
-**WebView-only mode** (`--no-node`):
-1. Loads the JS compatibility layer directly inside the WebView
-2. The app's main script runs inside the WKWebView JavaScript context
-3. No Node.js process is spawned — saves ~50 MB RSS
-4. Some APIs (native dialogs, clipboard, screen info) communicate directly from the WebView to the Rust binary via `window.ipc.postMessage()`
-
-### 2. Node.js Fallback (`cli/gelectron.js`)
-
-When the native binary is not built, the CLI falls back to pure Node.js:
-
-1. Patches `Module._resolveFilename` so `require('electron')` resolves to Gelectron's shim
-2. Loads the app's main script — the app runs against the JS compatibility layer
-3. No real window is created (API-only mode)
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────┐
-│             Gelectron App                        │
-│   (HTML / CSS / JS + package.json)               │
-│   (Same code as Electron apps)                   │
-└────────────────────┬─────────────────────────────┘
-                     │
-┌────────────────────▼─────────────────────────────┐
-│           Gelectron Runtime                       │
-│                                                   │
-│   ┌────────────────────────────────────────────┐  │
-│   │  electron compat layer (JavaScript)        │  │
-│   │  app · BrowserWindow · Menu · Tray         │  │
-│   │  ipcMain · ipcRenderer · contextBridge     │  │
-│   │  dialog · shell · notification             │  │
-│   └────────────────────────────────────────────┘  │
-│                                                   │
-│   ┌────────────────────────────────────────────┐  │
-│   │  gelectron-app (Rust standalone binary)    │  │
-│   │  tao  · windowing                          │  │
-│   │  wry  · WebView (WKWebView / WebView2 /    │
-│   │           WebKitGTK)                       │  │
-│   └────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────┘
-```
-
-## Supported Electron APIs
-
-### Main Process
-
-| Module | Status |
-|---|---|
-| `app` | Full lifecycle, paths, command line, dock (macOS), `whenReady()` |
-| `BrowserWindow` | Create, show/hide, min/max/restore, resize, loadURL/loadFile, history navigation, DevTools, `capturePage()`, `print()`, `printToPDF()`, macOS title bar theming, events, webContents |
-| `ipcMain` | `handle()`, `on()`, `removeHandler()`, event emission |
-| `Menu` | `buildFromTemplate()`, `popup()`, `setApplicationMenu()` |
-| `MenuItem` | All types (normal, checkbox, separator, submenu, role) |
-| `Tray` | Create, tooltip, context menu, click events |
-| `dialog` | `showOpenDialog()`, `showSaveDialog()`, `showMessageBox()`, `showErrorBox()` |
-| `shell` | `openExternal()`, `showItemInFolder()`, `openPath()` |
-| `Notification` | Full API + native OS notifications (macOS Notification Center, Windows Toasts, Linux D-Bus); click/action/reply/close/failed events |
-| `nativeImage` | Create from path/buffer/dataURL, `createEmpty()`, PNG/JPEG export |
-| `safeStorage` | Encrypt/decrypt via system keyring |
-| `contextBridge` | `exposeInMainWorld()` for secure preload |
-| `webContents` | `send()`, `executeJavaScript()`, DevTools (open/close/toggle/inspect), history navigation (`goBack`/`goForward`), `capturePage()`, `print()`, `printToPDF()`, reload, stop |
-
-### Renderer Process
-
-| Module | Status |
-|---|---|
-| `ipcRenderer` | `invoke()`, `send()`, `on()`, `removeListener()` |
-
-### Compatibility Shims
-
-| Module | Status |
-|---|---|
-| `screen` | Native display enumeration (`getAllDisplays`, `getPrimaryDisplay`, `getDisplayMatching`, …) |
-| `clipboard` | Full API (`readText`/`writeText`/`readHTML`/`writeHTML`/`readBookmark`/`readFindText`/`availableFormats`) |
-| `nativeTheme` | `shouldUseDarkColors`, `themeSource`, `themes` (native-backed when available) |
-| `systemPreferences` | Basic stubs |
-| `powerMonitor` | Event stubs |
-| `globalShortcut` | Register/unregister stubs |
-| `session` | Cookies, protocol, permissions (stub) |
-| `net` | `fetch()` proxy |
-| `autoUpdater` | Full (sha512-verified, atomic apply) |
-
-## macOS Title Bar Theming
-
-Electron-compatible APIs (work in stock Electron):
-
-```js
-const win = new BrowserWindow({
-  titleBarStyle: 'hidden',
-  titleBarOverlay: { color: '#24a0ed', symbolColor: '#ffffff', height: 40 },
-  backgroundColor: '#0f0f23',
-});
-
-win.setTitleBarOverlay({ color: '#FF5A5F', transparent: true, titleBarStyle: 'hiddenInset' });
-win.setBackgroundColor('#123456');
-win.getBackgroundColor(); // '#123456'
-```
-
-Gelectron-only helper (no Electron equivalent — a single clear call for the top bar):
-
-```js
-win.setTopBarColor('#FF5A5F');                                   // just a color
-win.setTopBarColor({ color: '#19b1ff', transparent: false });    // options object
-win.setTopBarColor({ transparent: true });                       // clear / see-through
-win.setTopBarColor('transparent');                               // shorthand for clear
-```
-
-Colors accept `#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`, `rgb()`, `rgba()`, or `transparent`.
-On macOS the title bar is painted via `NSWindow` (`backgroundColor` +
-`titlebarAppearsTransparent`). On other platforms the APIs are accepted for
-compatibility but are no-ops.
-
-## Demo App
-
-A minimal demo that renders HTML/CSS/JS in a real window:
-
-```bash
+# Run demo app
 cargo run --release -p gelectron -- demo/
 ```
 
-The demo includes:
-- Interactive counter (DOM updates via JS)
-- Live clock driven by `requestAnimationFrame`
-- Animated canvas with moving shapes
-- CSS grid, gradients, transitions, and flexbox
+## Architecture (high level)
 
-### Demo source
+Gelectron is composed of:
 
-```
-demo/
-├── package.json    # { "main": "main.js" }
-├── main.js         # Creates BrowserWindow, loads index.html
-└── index.html      # HTML + CSS + JavaScript
-```
+1. **Rust runtime (`crates/gelectron-app`)**
+   - Native app process
+   - Window/event loop via `tao`
+   - Native web view via `wry`
 
-### Running the demo
+2. **JS compatibility layer (`src/electron/`)**
+   - `require('electron')`-style API surface
+   - Main-process and renderer shims
+   - IPC bridge to the native runtime
 
-`demo/main.js`:
+3. **CLI launcher (`cli/gelectron.js`)**
+   - Resolves app entry point
+   - Locates and launches the native runtime when present
+   - Falls back to JS runtime when native binary is not found
 
-```javascript
-const { app, BrowserWindow } = require('electron');
-const path = require('path');
+## API compatibility
 
-app.whenReady().then(() => {
-  const win = new BrowserWindow({ width: 900, height: 680 });
-  win.loadFile(path.join(__dirname, 'index.html'));
-});
+Gelectron exposes Electron-like modules from `src/electron/index.js`, including:
 
-app.on('window-all-closed', () => app.quit());
-```
+- `app`
+- `BrowserWindow`
+- `ipcMain`
+- `Menu` / `MenuItem`
+- `Tray`
+- `dialog`
+- `shell`
+- `Notification`
+- `nativeImage`
+- `safeStorage`
+- `contextBridge`
+- `webContents`
+- `autoUpdater`
+- `clipboard`
+- `screen`
+- `nativeTheme`
+- `session` (stubbed behavior)
+- plus additional stubs such as `systemPreferences`, `powerMonitor`, and `globalShortcut`
 
-## Project Structure
+Because behavior is still maturing, treat compatibility as best-effort rather than complete parity.
 
-```
-gelectron/
-├── Cargo.toml                         # Rust workspace root
-├── package.json                       # npm package
-├── cli/
-│   └── gelectron.js                   # CLI entry point (Node.js fallback)
-├── src/
-│   └── electron/                      # JS Electron compatibility layer
-│       ├── index.js                   # Main exports (require('electron'))
-│       ├── app.js                     # app lifecycle
-│       ├── browser-window.js          # BrowserWindow + WebContents
-│       ├── ipc-main.js               # ipcMain
-│       ├── ipc-renderer.js           # ipcRenderer
-│       ├── context-bridge.js         # contextBridge
-│       ├── menu.js                   # Menu + MenuItem
-│       ├── tray.js                   # Tray
-│       ├── dialog.js                 # File/message dialogs
-│       ├── shell.js                  # Shell operations
-│       ├── notification.js           # Notifications
-│       ├── native-image.js           # Image handling
-│       ├── clipboard.js              # Clipboard
-│       ├── screen.js                 # Display enumeration
-│       ├── nativeTheme.js            # Dark mode / theme
-│       ├── safe-storage.js           # Encryption
-│       ├── web-contents.js           # webContents utilities
-│       ├── auto-updater.js           # autoUpdater (electron-updater compatible)
-│       ├── native-bridge.js          # IPC to Rust binary
-│       ├── preload-loader.js         # Preload injection
-│       └── runtime.js                # Node.js fallback runtime
-├── crates/
-│   ├── gelectron-core/               # N-API addon (Rust → Node.js)
-│   │   ├── Cargo.toml
-│   │   └── src/
-│   │       ├── lib.rs                # N-API entry: init(), get_platform()
-│   │       ├── app.rs               # App lifecycle (native)
-│   │       ├── browser_window.rs    # Window management (native)
-│   │       ├── servo_host.rs        # Servo engine hooks (stub, not in use)
-│   │       ├── event_loop.rs        # Event loop bridge
-│   │       ├── ipc.rs               # IPC bridge
-│   │       ├── protocol.rs          # Custom protocol handler
-│   │       ├── menu.rs              # Native menus (muda)
-│   │       ├── tray.rs              # System tray (tray-icon)
-│   │       ├── dialog.rs            # File dialogs (rfd)
-│   │       ├── shell.rs             # Shell operations
-│   │       ├── notification.rs      # Notifications (notify-rust)
-│   │       ├── native_image.rs      # Image processing (image)
-│   │       ├── safe_storage.rs      # Secure storage (keyring)
-│   │       ├── context_bridge.rs    # Context bridge (native)
-│   │       └── web_contents.rs      # WebContents (native)
-│   └── gelectron-app/               # Standalone native binary
-│       ├── Cargo.toml
-│       └── src/
-│           └── main.rs              # tao + wry event loop, Node.js spawner
-├── demo/                            # Demo app
-│   ├── package.json
-│   ├── main.js
-│   └── index.html
-├── packager/                        # gelectron-packager CLI
-│   ├── package.json
-│   └── bin/
-│       └── gelectron-packager.js    # Packaging tool
-└── npm/
-    └── darwin-arm64/                # Platform-specific npm packages
-```
+## Packaging
 
-## Packaging for Distribution
-
-Use `gelectron-packager` to build standalone executables for Mac, Windows, and Linux:
+`gelectron-packager` is included as a CLI tool:
 
 ```bash
-# Install the packager
-cd packager && npm link && cd ..
-
-# Package for current platform
 gelectron-packager --dir ./demo --name MyApp
+```
 
-# Package for a specific platform
+You can also specify target platform/arch:
+
+```bash
 gelectron-packager --dir ./my-app --name MyApp --platform darwin --arch arm64
 gelectron-packager --dir ./my-app --name MyApp --platform win32 --arch x64
 gelectron-packager --dir ./my-app --name MyApp --platform linux --arch x64
 ```
 
-### What the packager does
+## Repository layout
 
-1. Finds your gelectron runtime — the built binary (`target/release/gelectron`),
-   or any gelectron installed through the installers/npm (PATH,
-   `/usr/local/lib/gelectron`, `Program Files\Gelectron`, …)
-2. Downloads a bundled Node.js runtime (~20 MB) for the target platform
-3. Copies your app source and `node_modules`
-4. Includes the Electron compatibility layer (`src/electron/`)
-5. Creates a self-contained, standalone distributable — no additional files needed at runtime:
-   - **macOS**: `.app` bundle (double-click to run, can be moved anywhere)
-   - **Windows**: Directory with `.exe` + `.bat` launcher
-   - **Linux**: Directory with launcher script + `.desktop` file
-
-> The packaged app bundles the Rust binary, Node.js runtime, your source code, `node_modules`, and the Electron compat layer. You can delete the original project files and the packaged app will still run.
-
-### macOS .app bundle structure
-
+```text
+gelectron/
+├── cli/                      # CLI entrypoint
+├── src/electron/             # Electron compatibility layer
+├── crates/gelectron-app/     # Rust native runtime binary
+├── crates/gelectron-core/    # Rust native core (N-API related)
+├── packager/                 # gelectron-packager
+├── demo/                     # Example app
+└── npm/                      # Platform npm package assets
 ```
-MyApp.app/
-  Contents/
-    MacOS/
-      MyApp              # Bash launcher (sets PATH, calls gelectron-bin)
-      gelectron-bin      # Rust binary (tao + wry)
-      node               # Bundled Node.js
-      compat/            # Electron compatibility layer
-      node_modules/      # Production dependencies
-    Resources/
-      app/               # Your app source
-    Info.plist
-```
-
-## Building for Production
-
-### Standalone binary (recommended)
-
-```bash
-cargo build --release -p gelectron
-```
-
-### N-API addon (for Node.js integration)
-
-```bash
-cargo build --release -p gelectron-core
-```
-
-The N-API addon compiles to a `.node` file that can be loaded directly into Node.js.
-
-## Publishing to npm
-
-Gelectron uses [napi-rs](https://napi.rs/) to produce platform-specific native addons. The main `gelectron` npm package ships platform-specific optional packages so that `npm install gelectron` automatically pulls the right binary for the user's OS.
-
-### Prerequisites
-
-- Rust 1.75+ (`rustup.rs`)
-- Node.js 18+
-- npm
-- An [npm account](https://www.npmjs.com/signup) with publish access
-- Each target platform needs to be built on that platform (or via CI)
-
-### Step 1: Build the native addon for your platform
-
-```bash
-# Build the N-API addon (produces crates/gelectron-core/*.node)
-npm run build
-
-# Or build with debug symbols for development
-npm run build:debug
-```
-
-This compiles the Rust N-API addon (`gelectron-core`) into a `.node` file that Node.js can load.
-
-### Step 2: Create platform-specific npm packages
-
-For each platform you want to support, create a directory under `npm/` with a `package.json`:
-
-```bash
-# Example for macOS ARM64
-mkdir -p npm/darwin-arm64
-cat > npm/darwin-arm64/package.json << 'EOF'
-{
-  "name": "gelectron-darwin-arm64",
-  "version": "0.1.0",
-  "description": "Gelectron native addon for macOS ARM64",
-  "main": "index.darwin-arm64.node",
-  "files": ["index.darwin-arm64.node"],
-  "os": ["darwin"],
-  "cpu": ["arm64"],
-  "license": "MIT"
-}
-EOF
-
-# Copy the built .node file
-cp crates/gelectron-core/gelectron_core.darwin-arm64.node npm/darwin-arm64/
-```
-
-Repeat for each platform:
-
-| Directory | os | cpu |
-|---|---|---|
-| `npm/darwin-arm64/` | `darwin` | `arm64` |
-| `npm/darwin-x64/` | `darwin` | `x64` |
-| `npm/win32-x64-msvc/` | `win32` | `x64` |
-| `npm/win32-arm64-msvc/` | `win32` | `arm64` |
-| `npm/linux-x64-gnu/` | `linux` | `x64` |
-| `npm/linux-arm64-gnu/` | `linux` | `arm64` |
-
-### Step 3: Publish platform packages first
-
-Each platform package must be published before the main package:
-
-```bash
-# Publish each platform package
-npm publish npm/darwin-arm64 --access public
-npm publish npm/darwin-x64 --access public
-npm publish npm/win32-x64-msvc --access public
-# ... etc for each platform
-```
-
-### Step 4: Prepare and publish the main package
-
-```bash
-# Run prepublish hook (generates napi artifacts metadata)
-npm run prepublishOnly
-
-# Publish the main package
-npm publish --access public
-```
-
-### Using napi-rs CLI (recommended)
-
-The `@napi-rs/cli` handles cross-compilation and artifact management:
-
-```bash
-# Install napi-rs CLI globally (if not already installed)
-npm install -g @napi-rs/cli
-
-# Build for all configured targets
-napi build --platform --release
-
-# Generate artifact metadata for npm publishing
-napi prepublish -t npm
-
-# Create a GitHub release with platform binaries
-napi artifacts
-```
-
-### CI/CD Publishing (recommended)
-
-For multi-platform publishing, use GitHub Actions to build on each OS:
-
-```yaml
-# .github/workflows/publish.yml
-name: Publish to npm
-on:
-  push:
-    tags: ['v*']
-
-jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            target: aarch64-apple-darwin
-          - os: macos-latest
-            target: x86_64-apple-darwin
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 18
-      - run: npm ci
-      - run: napi build --platform --release --target ${{ matrix.target }}
-      - run: napi prepublish -t npm
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bindings-${{ matrix.target }}
-          path: npm/
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-      - run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-```
-
-### Quick publish (single platform)
-
-If you only need to publish for your current platform:
-
-```bash
-# Build
-npm run build
-
-# Preview what will be published
-npm pack --dry-run
-
-# Publish
-npm run prepublishOnly
-npm publish --access public
-```
-
-> **Tip:** Use `npm pack` to create a tarball locally and inspect it before publishing. Run `npm pack` and then `tar -tzf gelectron-0.1.0.tgz` to verify the contents.
-
-## Testing with OmniEmu2.0
-
-OmniEmu2.0 is a full Electron app used to validate Gelectron compatibility:
-
-```bash
-# From the gelectron directory
-cargo run --release -p gelectron -- /path/to/OmniEmu2.0
-```
-
-Key APIs exercised by OmniEmu2.0:
-- `app`, `BrowserWindow`, `Tray`, `Menu`, `nativeImage`, `dialog`
-- `electron-updater` (autoUpdater stub)
-- `contextBridge`, `ipcRenderer`
-- File loading (`loadFile`), window events
-
-## CLI Options
-
-```bash
-gelectron <path-to-app>       # Run an Electron app
-gelectron <file.js>           # Run a main process script directly
-gelectron --version           # Print version
-gelectron --help              # Show help
-```
-
-## Environment Variables
-
-| Variable | Description |
-|---|---|
-| `GELECTRON_DEV=1` | Enable development mode |
-| `GELECTRON_LOG=1` | Enable verbose logging |
-| `VITE_DEV_SERVER_URL=<url>` | Connect to a Vite dev server |
-| `RUST_LOG=info` | Enable Rust-side logging |
-
-## Known Limitations
-
-- Some Electron APIs are stubs or partial (marked in the compatibility table — see [ELECTRON_API_STATUS.md](ELECTRON_API_STATUS.md) for full tracking)
-- Preload scripts are injected via WebView init scripts, not true Electron preload isolation (`contextIsolation` is stored but there is no separate V8 isolate)
-- Tray is a JS-only stub (API surface present, no native system tray icon yet)
-- `capturePage()`/`printToPDF()` are native on macOS (WKWebView) and reported as unsupported elsewhere
-- Custom protocol handlers (`gelectron://`) are not yet implemented
-- App sandboxing (webPreferences.sandbox) is not yet enforced
-
-## Roadmap
-
-**Shipped**
-
-- [x] JS Electron API compatibility layer
-- [x] Standalone native binary (tao + wry)
-- [x] Node.js fallback runtime (`cli/gelectron.js`)
-- [x] JSON-line IPC between Rust and Node.js
-- [x] WebView-only mode (`--no-node`)
-- [x] `electron-updater` compatibility (sha512-verified, atomic apply)
-- [x] Native notifications (Notification Center / Toasts / D-Bus)
-- [x] Full clipboard API (text / HTML / RTF / image / bookmark / find-text)
-- [x] Multi-window support (create, destroy, focus tracking)
-- [x] DevTools integration (wry webview devtools, native on macOS)
-- [x] WebContents navigation history (`goBack`/`goForward`)
-- [x] `capturePage()` / `print()` / `printToPDF()` (native on macOS)
-- [x] Native menus via muda (macOS application menu)
-- [x] macOS title bar theming (`titleBarStyle`, `titleBarOverlay`, `setBackgroundColor`, `setTopBarColor`)
-- [x] Process polyfill for WebView-only mode (`process.js`)
-- [x] macOS dock icon + app window icon support
-- [x] Clipboard sync IPC via Unix FIFOs (macOS/Linux)
-- [x] Performance benchmarks vs Electron
-
-**In progress**
-
-- [ ] Native tray icon (Windows / Linux, cross-platform)
-- [ ] Package/distribution tooling (npm, GitHub Releases, DMG/EXE/AppImage installers)
-- [ ] Custom protocol handlers (`gelectron://`)
-- [ ] Full `session` module (cookies, protocol registration, permissions)
-- [ ] Native menu item click events + role auto-behavior on all platforms
-- [ ] Cross-platform verification (Windows, Linux)
-
-**Planned**
-
-- [ ] App sandboxing
-- [ ] `window.open()` handling and popup windows
-- [ ] BrowserView / WebContentsView embedding
-- [ ] Desktop capturer (`desktopCapturer`) for screen/window sharing
-- [ ] Power monitor (`powerMonitor`, `powerSaveBlocker`) real backends
-- [ ] Global shortcuts (`globalShortcut`) real backends
-- [ ] `net.request()` / ClientRequest API
-- [ ] WebRequest interception (`webRequest`)
-- [ ] Zoom controls (`webContents.setZoomFactor`, `BrowserWindow.webContents.zoomLevel`)
-- [ ] Service workers and offline support
-- [ ] Single-instance lock (`app.requestSingleInstanceLock`)
-- [ ] Crash reporter (`crashReporter`)
-- [ ] Linux/Windows native menu verification and polish
 
 ## Contributing
 
-1. Fork the repo
-2. Create a feature branch
-3. Make your changes
-4. Run `cargo build --release -p gelectron` and test with `cargo run --release -p gelectron -- demo/`
-5. Submit a PR
-
-## License
-
-MIT — see [LICENSE](LICENSE)
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).
