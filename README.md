@@ -1,7 +1,7 @@
 <div align="center">
   <img src="logo.png" alt="Gelectron" width="180">
   <h1>Gelectron</h1>
-  <p>Run Electron-style apps on native OS web views with a Rust runtime and a JavaScript compatibility layer.</p>
+  <p>A drop-in replacement for Electron using native web views (WKWebView / WebView2 / WebKitGTK) instead of Chromium</p>
 </div>
 
 Gelectron is an Electron alternative focused on using platform-native web views through [`wry`](https://github.com/tauri-apps/wry) and `tao`, plus a Node-compatible API shim.
